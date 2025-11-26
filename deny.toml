@@ -1,0 +1,68 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+#
+# Run with: cargo deny check
+
+[advisories]
+# The database of security advisories
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# How to handle unmaintained crates
+unmaintained = "warn"
+# How to handle yanked crates
+yanked = "deny"
+# Ignore specific advisories (by RUSTSEC ID)
+ignore = []
+
+[licenses]
+# Confidence threshold for license detection
+confidence-threshold = 0.8
+# Allow copyleft licenses (we're MIT-compatible)
+copyleft = "warn"
+# Allow these licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "CC0-1.0",
+    "Unlicense",
+    "MPL-2.0",
+    "Zlib",
+    "Unicode-DFS-2016",
+]
+# List of explicitly allowed crates (overrides allow list)
+exceptions = []
+
+[bans]
+# How to handle multiple versions of the same crate
+multiple-versions = "warn"
+# How to handle wildcard dependencies
+wildcards = "deny"
+# How to handle build script dependencies
+highlight = "all"
+# Crates to deny entirely
+deny = [
+    # No known bad crates yet
+]
+# Crates to skip version duplication warnings
+skip = []
+# Tree of crates to skip
+skip-tree = []
+
+[sources]
+# Require all crates come from crates.io
+unknown-registry = "deny"
+# Require all crates come from crates.io (no git dependencies)
+unknown-git = "warn"
+# Allow specific git repositories
+allow-git = []
+# Allow only crates.io as a registry
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+# Specific source rules for workspace members
+[sources.allow-org]
+# Allow our own organization's crates
+github = []

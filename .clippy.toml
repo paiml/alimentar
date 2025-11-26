@@ -1,0 +1,11 @@
+# Clippy configuration for alimentar
+# Enforce project-specific style preferences
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 15
+
+# Type complexity threshold
+type-complexity-threshold = 250
+
+# Maximum lines for a single function
+too-many-lines-threshold = 100

@@ -1,0 +1,91 @@
+//! alimentar - Data Loading, Distribution and Tooling in Pure Rust
+//!
+//! A sovereign-first data loading library for the paiml AI stack.
+//! Provides HuggingFace-compatible functionality without mandatory cloud
+//! dependency.
+//!
+//! # Design Principles
+//!
+//! 1. **Sovereign-first** - Local storage default, no mandatory cloud
+//!    dependency
+//! 2. **Pure Rust** - No Python, no FFI (WASM-compatible)
+//! 3. **Zero-copy** - Arrow `RecordBatch` throughout
+//! 4. **Ecosystem aligned** - Arrow 53, Parquet 53
+//!
+//! # Quick Start
+//!
+//! ```no_run
+//! use alimentar::{ArrowDataset, DataLoader};
+//!
+//! // Load a parquet file
+//! let dataset = ArrowDataset::from_parquet("data/train.parquet").unwrap();
+//!
+//! // Create a data loader
+//! let loader = DataLoader::new(dataset).batch_size(32).shuffle(true);
+//!
+//! // Iterate over batches
+//! for batch in loader {
+//!     println!("Batch with {} rows", batch.num_rows());
+//! }
+//! ```
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+// Allow some pedantic lints for cleaner code
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::redundant_closure_for_method_calls)]
+#![allow(clippy::map_unwrap_or)]
+#![allow(clippy::useless_conversion)]
+
+pub mod backend;
+pub mod dataloader;
+pub mod dataset;
+pub mod datasets;
+pub mod drift;
+pub mod error;
+pub mod federated;
+pub mod format;
+#[cfg(feature = "hf-hub")]
+pub mod hf_hub;
+pub mod imbalance;
+pub mod quality;
+pub mod registry;
+pub mod serve;
+pub mod sketch;
+pub mod split;
+pub mod streaming;
+pub mod transform;
+
+// Re-exports for convenience
+// Re-export arrow types commonly needed
+pub use arrow::{
+    array::RecordBatch,
+    datatypes::{Schema, SchemaRef},
+};
+pub use dataloader::DataLoader;
+pub use dataset::{ArrowDataset, CsvOptions, Dataset, JsonOptions};
+pub use drift::{ColumnDrift, DriftDetector, DriftReport, DriftSeverity, DriftTest};
+pub use error::{Error, Result};
+pub use federated::{
+    FederatedSplitCoordinator, FederatedSplitStrategy, GlobalSplitReport, NodeSplitInstruction,
+    NodeSplitManifest, NodeSummary, SplitQualityIssue,
+};
+pub use imbalance::{
+    ClassDistribution, ImbalanceDetector, ImbalanceMetrics, ImbalanceRecommendation,
+    ImbalanceReport, ImbalanceSeverity,
+};
+pub use quality::{ColumnQuality, QualityChecker, QualityIssue, QualityReport};
+pub use sketch::{
+    Centroid, DDSketch, DataSketch, DistributedDriftDetector, SketchDriftResult, SketchType,
+    TDigest,
+};
+pub use split::DatasetSplit;
+pub use transform::{
+    Cast, Chain, Drop, FillNull, FillStrategy, Filter, Map, NormMethod, Normalize, Rename, Select,
+    Skip, Sort, SortOrder, Take, Transform, Unique,
+};
+#[cfg(feature = "shuffle")]
+pub use transform::{Sample, Shuffle};
