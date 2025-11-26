@@ -219,4 +219,4 @@ let dataset = load_from_bytes(&bytes)?;  // WASM: in-memory, ignores flags
 
 Target: <500KB gzipped.
 
-See the [full specification](https://github.com/paiml/alimentar/docs/specifications/dataset-format-spec.md) for complete details.
+See the [full specification](https://github.com/paiml/alimentar/blob/main/docs/specifications/dataset-format-spec.md) for complete details.

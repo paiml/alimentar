@@ -16,6 +16,10 @@ A sovereignty-first data loading library for the paiml AI stack. Provides Huggin
 - **Streaming**: Memory-efficient lazy loading for large datasets
 - **Transforms**: Filter, sort, sample, shuffle, normalize, and more
 - **Registry**: Local dataset registry with versioning and metadata
+- **Data Quality**: Null detection, duplicate checking, outlier analysis
+- **Drift Detection**: KS test, Chi-square, PSI for distribution monitoring
+- **Federated Learning**: Local, proportional, and stratified dataset splits
+- **Built-in Datasets**: MNIST, Fashion-MNIST, CIFAR-10, CIFAR-100, Iris
 - **WASM support**: Works in browsers via WebAssembly
 
 ## Installation
