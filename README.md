@@ -172,6 +172,21 @@ This project follows extreme TDD practices:
 - Zero `unwrap()`/`expect()` in library code
 - Comprehensive clippy lints
 
+## Citation
+
+If you use alimentar in your research, please cite:
+
+```bibtex
+@software{alimentar2025,
+  author       = {paiml},
+  title        = {alimentar: Data Loading, Distribution and Tooling in Pure Rust},
+  year         = {2025},
+  publisher    = {GitHub},
+  url          = {https://github.com/paiml/alimentar},
+  version      = {0.1.0}
+}
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
