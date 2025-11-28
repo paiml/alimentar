@@ -1,4 +1,19 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_precision_loss, clippy::cast_lossless, clippy::uninlined_format_args, clippy::too_many_lines, clippy::similar_names, clippy::float_cmp, clippy::needless_late_init, clippy::redundant_clone, clippy::doc_markdown, clippy::unnecessary_debug_formatting)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_lossless,
+    clippy::uninlined_format_args,
+    clippy::too_many_lines,
+    clippy::similar_names,
+    clippy::float_cmp,
+    clippy::needless_late_init,
+    clippy::redundant_clone,
+    clippy::doc_markdown,
+    clippy::unnecessary_debug_formatting
+)]
 //! Registry Publish/Pull Example
 //!
 //! Demonstrates dataset registry operations:
@@ -97,6 +112,7 @@ fn main() -> alimentar::Result<()> {
         ],
         source: Some("UCI Machine Learning Repository".to_string()),
         citation: Some("Fisher, R.A. (1936)".to_string()),
+        sha256: None,
     };
 
     registry.publish("iris", "1.0.0", &iris, iris_metadata)?;
@@ -116,6 +132,7 @@ fn main() -> alimentar::Result<()> {
         ],
         source: Some("Yann LeCun".to_string()),
         citation: None,
+        sha256: None,
     };
 
     registry.publish("mnist", "1.0.0", &mnist, mnist_metadata)?;
@@ -133,6 +150,7 @@ fn main() -> alimentar::Result<()> {
         ],
         source: Some("UCI Machine Learning Repository".to_string()),
         citation: Some("Fisher, R.A. (1936)".to_string()),
+        sha256: None,
     };
 
     registry.publish("iris", "2.0.0", &iris, iris_v2_metadata)?;

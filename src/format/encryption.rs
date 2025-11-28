@@ -369,4 +369,144 @@ mod tests {
         // Due to random salt/nonce, ciphertexts should differ
         assert_ne!(ct1, ct2);
     }
+
+    #[test]
+    fn test_empty_plaintext_encryption() {
+        let plaintext = b"";
+        let password = "password";
+
+        let (mode_byte, salt, nonce, ciphertext) =
+            encrypt_password(plaintext, password).expect("encrypt failed");
+
+        assert_eq!(mode_byte, mode::PASSWORD);
+        // Even empty plaintext produces ciphertext (due to auth tag)
+        assert!(!ciphertext.is_empty());
+
+        let decrypted =
+            decrypt_password(&ciphertext, password, &salt, &nonce).expect("decrypt failed");
+        assert_eq!(decrypted.as_slice(), plaintext);
+    }
+
+    #[test]
+    fn test_large_plaintext_encryption() {
+        // Test with 1MB plaintext
+        let plaintext: Vec<u8> = (0u32..1_000_000).map(|i| (i % 256) as u8).collect();
+        let password = "large_data_password";
+
+        let (mode_byte, salt, nonce, ciphertext) =
+            encrypt_password(&plaintext, password).expect("encrypt failed");
+
+        assert_eq!(mode_byte, mode::PASSWORD);
+        assert!(ciphertext.len() >= plaintext.len());
+
+        let decrypted =
+            decrypt_password(&ciphertext, password, &salt, &nonce).expect("decrypt failed");
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_special_characters_in_password() {
+        let plaintext = b"Test data";
+        let password = "p@$$w0rd!#%^&*()_+-=[]{}|;':\",./<>?`~";
+
+        let (_, salt, nonce, ciphertext) =
+            encrypt_password(plaintext, password).expect("encrypt failed");
+
+        let decrypted =
+            decrypt_password(&ciphertext, password, &salt, &nonce).expect("decrypt failed");
+        assert_eq!(decrypted.as_slice(), plaintext);
+    }
+
+    #[test]
+    fn test_unicode_password() {
+        let plaintext = b"Data with unicode password";
+        let password = "密码🔐пароль";
+
+        let (_, salt, nonce, ciphertext) =
+            encrypt_password(plaintext, password).expect("encrypt failed");
+
+        let decrypted =
+            decrypt_password(&ciphertext, password, &salt, &nonce).expect("decrypt failed");
+        assert_eq!(decrypted.as_slice(), plaintext);
+    }
+
+    #[test]
+    fn test_corrupted_ciphertext_fails() {
+        let plaintext = b"Original data";
+        let password = "password";
+
+        let (_, salt, nonce, mut ciphertext) =
+            encrypt_password(plaintext, password).expect("encrypt failed");
+
+        // Corrupt the ciphertext
+        if !ciphertext.is_empty() {
+            ciphertext[0] ^= 0xFF;
+        }
+
+        let result = decrypt_password(&ciphertext, password, &salt, &nonce);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_corrupted_nonce_fails() {
+        let plaintext = b"Original data";
+        let password = "password";
+
+        let (_, salt, mut nonce, ciphertext) =
+            encrypt_password(plaintext, password).expect("encrypt failed");
+
+        // Corrupt the nonce
+        nonce[0] ^= 0xFF;
+
+        let result = decrypt_password(&ciphertext, password, &salt, &nonce);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_corrupted_salt_fails() {
+        let plaintext = b"Original data";
+        let password = "password";
+
+        let (_, mut salt, nonce, ciphertext) =
+            encrypt_password(plaintext, password).expect("encrypt failed");
+
+        // Corrupt the salt
+        salt[0] ^= 0xFF;
+
+        let result = decrypt_password(&ciphertext, password, &salt, &nonce);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rng_wrapper() {
+        use rand_core::RngCore;
+
+        let mut rng = RngWrapper([0x42; 32]);
+
+        // Test next_u32
+        let val = rng.next_u32();
+        assert_eq!(val, 0x42424242);
+
+        // Test next_u64
+        let val64 = rng.next_u64();
+        assert_eq!(val64, 0x4242424242424242);
+
+        // Test fill_bytes
+        let mut buf = [0u8; 8];
+        rng.fill_bytes(&mut buf);
+        assert_eq!(buf, [0x42; 8]);
+
+        // Test try_fill_bytes
+        let mut buf2 = [0u8; 4];
+        rng.try_fill_bytes(&mut buf2).expect("should succeed");
+        assert_eq!(buf2, [0x42; 4]);
+    }
+
+    #[test]
+    fn test_mode_constants() {
+        // Verify mode constants are distinct
+        assert_ne!(mode::PASSWORD, mode::RECIPIENT);
+        assert_eq!(mode::PASSWORD, 0x00);
+        assert_eq!(mode::RECIPIENT, 0x01);
+    }
 }

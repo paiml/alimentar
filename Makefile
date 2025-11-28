@@ -12,7 +12,7 @@ MAKEFLAGS += -j$(shell nproc)
 .DELETE_ON_ERROR:
 .ONESHELL:
 
-.PHONY: help build build-release bench bench-check test test-fast test-verbose test-lib lint lint-pedantic lint-fast fmt fmt-check check coverage coverage-open coverage-check coverage-clean quality-gate mutants mutation-report mutation-clean tdg clean doc doc-open watch watch-test ci pre-commit dev-deps stats pmat-tdg pmat-analyze pmat-score pmat-rust-score pmat-rust-score-fast pmat-quality-gate pmat-all wasm wasm-check book book-build book-serve book-test
+.PHONY: help build build-release bench bench-check test test-fast test-verbose test-lib test-s3 test-s3-full lint lint-pedantic lint-fast fmt fmt-check check coverage coverage-open coverage-check coverage-clean quality-gate mutants mutation-report mutation-clean tdg clean doc doc-open watch watch-test ci pre-commit dev-deps stats pmat-tdg pmat-analyze pmat-score pmat-rust-score pmat-rust-score-fast pmat-quality-gate pmat-all wasm wasm-check book book-build book-serve book-test
 
 # Coverage threshold (85% minimum)
 # Note: HTTP backend and HF Hub require network calls that aren't testable without mocking.
@@ -66,6 +66,21 @@ test-verbose: ## Run tests with verbose output
 
 test-lib: ## Run library tests only
 	cargo test --lib --all-features
+
+test-s3: ## Run S3 integration tests (requires docker compose up -d first)
+	@echo "🪣 Running S3 integration tests with MinIO..."
+	@echo "   Ensure MinIO is running: docker compose up -d"
+	cargo test --features s3 s3_integration -- --ignored
+
+test-s3-full: ## Start MinIO and run S3 integration tests
+	@echo "🚀 Starting MinIO via docker compose..."
+	docker compose up -d
+	@echo "⏳ Waiting for MinIO to be ready..."
+	@sleep 5
+	@echo "🪣 Running S3 integration tests..."
+	cargo test --features s3 s3_integration -- --ignored
+	@echo "🧹 Stopping MinIO..."
+	docker compose down
 
 ## Quality Gates (EXTREME TDD - 95% coverage minimum)
 

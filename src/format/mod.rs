@@ -434,6 +434,36 @@ pub struct Metadata {
     pub citation: Option<String>,
     /// Creation timestamp (RFC 3339)
     pub created_at: Option<String>,
+    /// SHA-256 hash of the payload data (hex string, 64 chars)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+}
+
+/// Computes SHA-256 hash of data and returns it as a hex string.
+///
+/// # Example
+///
+/// ```
+/// use alimentar::format::sha256_hex;
+///
+/// let hash = sha256_hex(b"Hello, World!");
+/// assert_eq!(hash.len(), 64); // 256 bits = 32 bytes = 64 hex chars
+/// ```
+#[cfg(feature = "provenance")]
+#[must_use]
+pub fn sha256_hex(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    let result = hasher.finalize();
+
+    // Convert to hex string
+    result.iter().fold(String::with_capacity(64), |mut s, b| {
+        use std::fmt::Write;
+        let _ = write!(s, "{b:02x}");
+        s
+    })
 }
 
 /// CRC32 checksum calculation (IEEE polynomial)
@@ -1997,5 +2027,52 @@ mod tests {
 
         header.flags |= flags::LICENSED;
         assert!(header.is_licensed());
+    }
+
+    #[test]
+    #[cfg(feature = "provenance")]
+    fn test_sha256_hex_known_value() {
+        // Test against known SHA-256 hash
+        let hash = super::sha256_hex(b"Hello, World!");
+        // SHA-256 of "Hello, World!" is known
+        assert_eq!(
+            hash,
+            "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "provenance")]
+    fn test_sha256_hex_length() {
+        let hash = super::sha256_hex(b"test data");
+        assert_eq!(hash.len(), 64); // 256 bits = 32 bytes = 64 hex chars
+    }
+
+    #[test]
+    #[cfg(feature = "provenance")]
+    fn test_sha256_hex_empty() {
+        let hash = super::sha256_hex(b"");
+        // SHA-256 of empty string is known
+        assert_eq!(
+            hash,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "provenance")]
+    fn test_sha256_hex_different_inputs() {
+        let hash1 = super::sha256_hex(b"input1");
+        let hash2 = super::sha256_hex(b"input2");
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_metadata_sha256_field() {
+        let mut metadata = Metadata::default();
+        assert!(metadata.sha256.is_none());
+
+        metadata.sha256 = Some("abc123".to_string());
+        assert_eq!(metadata.sha256, Some("abc123".to_string()));
     }
 }

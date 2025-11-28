@@ -505,4 +505,173 @@ mod tests {
         let loader = DataLoader::new(dataset).batch_size(0);
         assert_eq!(loader.get_batch_size(), 1);
     }
+
+    #[test]
+    fn test_empty_dataset() {
+        let dataset = create_test_dataset(0);
+        let loader = DataLoader::new(dataset).batch_size(3);
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        assert!(batches.is_empty());
+    }
+
+    #[test]
+    fn test_empty_dataset_drop_last() {
+        let dataset = create_test_dataset(0);
+        let loader = DataLoader::new(dataset).batch_size(3).drop_last(true);
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        assert!(batches.is_empty());
+    }
+
+    #[test]
+    fn test_is_empty() {
+        let empty_dataset = create_test_dataset(0);
+        let loader_empty = DataLoader::new(empty_dataset);
+        assert!(loader_empty.is_empty());
+
+        let dataset = create_test_dataset(5);
+        let loader = DataLoader::new(dataset);
+        assert!(!loader.is_empty());
+    }
+
+    #[test]
+    fn test_len() {
+        let dataset = create_test_dataset(42);
+        let loader = DataLoader::new(dataset);
+        assert_eq!(loader.len(), 42);
+    }
+
+    #[test]
+    fn test_single_row_dataset() {
+        let dataset = create_test_dataset(1);
+        let loader = DataLoader::new(dataset).batch_size(5);
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].num_rows(), 1);
+    }
+
+    #[test]
+    fn test_single_row_drop_last() {
+        let dataset = create_test_dataset(1);
+        let loader = DataLoader::new(dataset).batch_size(5).drop_last(true);
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        // Single row is smaller than batch size, so it should be dropped
+        assert!(batches.is_empty());
+    }
+
+    #[test]
+    fn test_batch_size_equals_dataset_size() {
+        let dataset = create_test_dataset(10);
+        let loader = DataLoader::new(dataset).batch_size(10);
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].num_rows(), 10);
+    }
+
+    #[test]
+    fn test_batch_size_larger_than_dataset() {
+        let dataset = create_test_dataset(5);
+        let loader = DataLoader::new(dataset).batch_size(100);
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].num_rows(), 5);
+    }
+
+    #[test]
+    fn test_batch_size_larger_than_dataset_drop_last() {
+        let dataset = create_test_dataset(5);
+        let loader = DataLoader::new(dataset).batch_size(100).drop_last(true);
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        // Batch is incomplete, should be dropped
+        assert!(batches.is_empty());
+    }
+
+    #[test]
+    fn test_num_batches_with_drop_last() {
+        let dataset = create_test_dataset(10);
+
+        let loader_without_drop = DataLoader::new(dataset.clone()).batch_size(3);
+        assert_eq!(loader_without_drop.num_batches(), 4); // 3 + 3 + 3 + 1
+
+        let loader_with_drop = DataLoader::new(dataset).batch_size(3).drop_last(true);
+        assert_eq!(loader_with_drop.num_batches(), 3); // 3 + 3 + 3
+    }
+
+    #[test]
+    fn test_builder_all_options() {
+        let dataset = create_test_dataset(10);
+        let result = DataLoaderBuilder::new()
+            .batch_size(4)
+            .shuffle(true)
+            .drop_last(true)
+            .seed(42)
+            .build(dataset);
+
+        assert!(result.is_ok());
+        let loader = result.ok().unwrap();
+        assert_eq!(loader.get_batch_size(), 4);
+        assert!(loader.is_shuffle());
+        assert!(loader.is_drop_last());
+    }
+
+    #[test]
+    fn test_size_hint_empty_dataset() {
+        let dataset = create_test_dataset(0);
+        let loader = DataLoader::new(dataset).batch_size(3);
+        let iter = loader.into_iter();
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+    }
+
+    #[test]
+    fn test_iterator_exhaustion() {
+        let dataset = create_test_dataset(5);
+        let loader = DataLoader::new(dataset).batch_size(2);
+        let mut iter = loader.into_iter();
+
+        // Should yield 3 batches: 2, 2, 1
+        assert!(iter.next().is_some());
+        assert!(iter.next().is_some());
+        assert!(iter.next().is_some());
+        // Should be exhausted
+        assert!(iter.next().is_none());
+        // Should remain exhausted
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_size_hint_during_iteration() {
+        let dataset = create_test_dataset(10);
+        let loader = DataLoader::new(dataset).batch_size(3);
+        let mut iter = loader.into_iter();
+
+        // Initially 4 batches remaining
+        assert_eq!(iter.size_hint(), (4, Some(4)));
+
+        iter.next();
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+
+        iter.next();
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+
+        iter.next();
+        assert_eq!(iter.size_hint(), (1, Some(1)));
+
+        iter.next();
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+    }
+
+    #[test]
+    fn test_debug_impl() {
+        let dataset = create_test_dataset(5);
+        let loader = DataLoader::new(dataset).batch_size(2);
+        let debug_str = format!("{:?}", loader);
+        assert!(debug_str.contains("DataLoader"));
+        assert!(debug_str.contains("batch_size: 2"));
+    }
+
+    #[test]
+    fn test_builder_debug_impl() {
+        let builder = DataLoaderBuilder::new().batch_size(10).drop_last(true);
+        let debug_str = format!("{:?}", builder);
+        assert!(debug_str.contains("DataLoaderBuilder"));
+    }
 }

@@ -11,10 +11,11 @@ categories = ["data-structures", "science"]
 rust-version = "1.75"
 
 [features]
-default = ["local", "tokio-runtime", "cli", "mmap", "shuffle"]
+default = ["local", "tokio-runtime", "cli", "mmap", "shuffle", "provenance"]
 local = []
 mmap = ["dep:memmap2"]
 shuffle = ["dep:rand"]
+provenance = ["dep:sha2"]
 tokio-runtime = ["dep:tokio"]
 s3 = ["dep:aws-sdk-s3", "dep:aws-config", "tokio-runtime"]
 http = ["dep:reqwest"]
@@ -97,7 +98,8 @@ codegen-units = 1
 strip = true
 
 [lints.rust]
-unsafe_code = "forbid"
+# Use deny instead of forbid to allow override in mmap module
+unsafe_code = "deny"
 # Enable additional high-value lints
 unsafe_op_in_unsafe_fn = "warn"
 missing_docs = "warn"

@@ -779,6 +779,7 @@ fn cmd_registry_push(
         tags: tag_list,
         source: Some(input.display().to_string()),
         citation: None,
+        sha256: None, // Computed during save, not at publish time
     };
 
     // Publish

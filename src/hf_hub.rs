@@ -631,4 +631,176 @@ mod tests {
         let result = dataset.clear_cache();
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_download_from_cache() {
+        use std::sync::Arc;
+
+        use arrow::{
+            array::Int32Array,
+            datatypes::{DataType, Field, Schema},
+            record_batch::RecordBatch,
+        };
+
+        use crate::Dataset;
+
+        // Create temp dir for cache
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+
+        // Create HfDataset pointing to this cache
+        let dataset = HfDataset::builder("test-repo")
+            .cache_dir(temp_dir.path())
+            .split("train")
+            .build()
+            .ok()
+            .unwrap_or_else(|| panic!("Should build"));
+
+        // Create the cache directory structure
+        let cache_path = dataset.cache_path_for(&dataset.build_parquet_path());
+        if let Some(parent) = cache_path.parent() {
+            std::fs::create_dir_all(parent)
+                .ok()
+                .unwrap_or_else(|| panic!("Should create dirs"));
+        }
+
+        // Create a minimal parquet file in cache
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(vec![1, 2, 3]))])
+            .ok()
+            .unwrap_or_else(|| panic!("Should create batch"));
+
+        let arrow_dataset = crate::ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        arrow_dataset
+            .to_parquet(&cache_path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should write parquet"));
+
+        // Now download should use cache
+        let loaded = dataset.download();
+        assert!(loaded.is_ok());
+        let loaded = loaded.ok().unwrap_or_else(|| panic!("Should load"));
+        assert_eq!(loaded.len(), 3);
+    }
+
+    #[test]
+    fn test_clear_cache_with_files() {
+        // Create temp dir
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+
+        let dataset = HfDataset::builder("clear-test")
+            .cache_dir(temp_dir.path())
+            .build()
+            .ok()
+            .unwrap_or_else(|| panic!("Should build"));
+
+        // Create cache directory with a file
+        let cache_dir = temp_dir
+            .path()
+            .join("huggingface")
+            .join("datasets")
+            .join("clear-test");
+        std::fs::create_dir_all(&cache_dir)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dir"));
+        std::fs::write(cache_dir.join("test.txt"), "test data")
+            .ok()
+            .unwrap_or_else(|| panic!("Should write file"));
+
+        // Verify it exists
+        assert!(cache_dir.exists());
+
+        // Clear cache
+        let result = dataset.clear_cache();
+        assert!(result.is_ok());
+
+        // Verify it's gone
+        assert!(!cache_dir.exists());
+    }
+
+    #[test]
+    fn test_download_to_creates_parent_dirs() {
+        // This test verifies the parent dir creation logic in download_to
+        // We can't test full download without network, but we can test
+        // that cache_path_for produces correct paths
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+
+        let dataset = HfDataset::builder("download-to-test")
+            .cache_dir(temp_dir.path())
+            .subset("custom")
+            .split("validation")
+            .build()
+            .ok()
+            .unwrap_or_else(|| panic!("Should build"));
+
+        // Verify parquet path building
+        assert_eq!(dataset.build_parquet_path(), "custom/validation.parquet");
+
+        // Verify cache path building
+        let cache_path = dataset.cache_path_for("custom/validation.parquet");
+        assert!(cache_path.to_string_lossy().contains("download-to-test"));
+        assert!(cache_path.to_string_lossy().contains("custom"));
+    }
+
+    #[test]
+    fn test_dataset_info_with_all_fields() {
+        let info = DatasetInfo {
+            repo_id: "full-test".to_string(),
+            splits: vec![
+                "train".to_string(),
+                "validation".to_string(),
+                "test".to_string(),
+            ],
+            subsets: vec!["default".to_string(), "extra".to_string()],
+            download_size: Some(1_000_000),
+            description: Some("A comprehensive test dataset for validation".to_string()),
+        };
+
+        assert_eq!(info.repo_id, "full-test");
+        assert_eq!(info.splits.len(), 3);
+        assert_eq!(info.subsets.len(), 2);
+        assert_eq!(info.download_size, Some(1_000_000));
+        assert!(info.description.is_some());
+    }
+
+    #[test]
+    fn test_builder_chain_all_methods() {
+        let dataset = HfDataset::builder("chain-test")
+            .revision("v2.0.0")
+            .subset("subset-a")
+            .split("test")
+            .cache_dir("/custom/cache")
+            .build()
+            .ok()
+            .unwrap_or_else(|| panic!("Should build"));
+
+        assert_eq!(dataset.repo_id(), "chain-test");
+        assert_eq!(dataset.revision(), "v2.0.0");
+        assert_eq!(dataset.subset(), Some("subset-a"));
+        assert_eq!(dataset.split(), Some("test"));
+        assert_eq!(dataset.cache_dir(), Path::new("/custom/cache"));
+    }
+
+    #[test]
+    fn test_deeply_nested_cache_path() {
+        let dataset = HfDataset::builder("org/deep/nested/repo")
+            .cache_dir("/root")
+            .subset("config-name")
+            .build()
+            .ok()
+            .unwrap_or_else(|| panic!("Should build"));
+
+        let cache_path = dataset.cache_path_for("config-name/train.parquet");
+        assert!(cache_path
+            .to_string_lossy()
+            .contains("org/deep/nested/repo"));
+    }
 }
