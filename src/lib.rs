@@ -43,13 +43,16 @@
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
         clippy::cast_precision_loss,
+        clippy::cloned_ref_to_slice_refs,
         clippy::redundant_clone,
         clippy::needless_collect,
         clippy::too_many_lines,
         clippy::for_kv_map,
         clippy::bool_to_int_with_if,
         clippy::float_cmp,
-        clippy::iter_on_single_items
+        clippy::iter_on_single_items,
+        clippy::similar_names,
+        clippy::unreadable_literal
     )
 )]
 // Allow some pedantic lints for cleaner code

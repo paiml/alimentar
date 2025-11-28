@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_precision_loss, clippy::cast_lossless, clippy::uninlined_format_args, clippy::too_many_lines, clippy::similar_names, clippy::float_cmp, clippy::needless_late_init, clippy::redundant_clone, clippy::doc_markdown, clippy::unnecessary_debug_formatting)]
 //! Registry Publish/Pull Example
 //!
 //! Demonstrates dataset registry operations:
