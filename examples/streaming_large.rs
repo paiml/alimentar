@@ -4,7 +4,13 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_precision_loss,
-    clippy::cast_lossless
+    clippy::cast_lossless,
+    clippy::uninlined_format_args,
+    clippy::doc_markdown,
+    clippy::too_many_lines,
+    clippy::redundant_clone,
+    clippy::use_debug,
+    clippy::unnecessary_debug_formatting
 )]
 //! Streaming Large Datasets Example
 //!
