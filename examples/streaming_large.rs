@@ -1,6 +1,14 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_lossless
+)]
 //! Streaming Large Datasets Example
 //!
-//! Demonstrates StreamingDataset for memory-efficient processing:
+//! Demonstrates `StreamingDataset` for memory-efficient processing:
 //! - Lazy loading from Parquet files
 //! - Configurable buffer sizes
 //! - Prefetching for reduced latency

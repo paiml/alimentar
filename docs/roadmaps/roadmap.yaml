@@ -6,11 +6,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-3'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-28T12:53:28.546680399+00:00
-  updated: 2025-11-28T12:53:28.546680399+00:00
+  updated: 2025-11-28T12:59:53.265132963+00:00
   spec: null
   acceptance_criteria: []
   phases: []
@@ -22,11 +22,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-4'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-28T12:55:18.925669357+00:00
-  updated: 2025-11-28T12:55:18.925669357+00:00
+  updated: 2025-11-28T12:59:53.795756322+00:00
   spec: null
   acceptance_criteria: []
   phases: []
