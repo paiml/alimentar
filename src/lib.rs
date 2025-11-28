@@ -40,6 +40,8 @@
 #![allow(clippy::map_unwrap_or)]
 #![allow(clippy::useless_conversion)]
 
+#[cfg(feature = "tokio-runtime")]
+pub mod async_prefetch;
 pub mod backend;
 pub mod dataloader;
 pub mod dataset;
@@ -58,6 +60,8 @@ pub mod sketch;
 pub mod split;
 pub mod streaming;
 pub mod transform;
+#[cfg(feature = "shuffle")]
+pub mod weighted;
 
 // Re-exports for convenience
 // Re-export arrow types commonly needed
@@ -65,6 +69,8 @@ pub use arrow::{
     array::RecordBatch,
     datatypes::{Schema, SchemaRef},
 };
+#[cfg(feature = "tokio-runtime")]
+pub use async_prefetch::{AsyncPrefetchBuilder, AsyncPrefetchDataset, SyncPrefetchDataset};
 pub use dataloader::DataLoader;
 pub use dataset::{ArrowDataset, CsvOptions, Dataset, JsonOptions};
 pub use drift::{ColumnDrift, DriftDetector, DriftReport, DriftSeverity, DriftTest};
@@ -89,3 +95,5 @@ pub use transform::{
 };
 #[cfg(feature = "shuffle")]
 pub use transform::{Sample, Shuffle};
+#[cfg(feature = "shuffle")]
+pub use weighted::WeightedDataLoader;
