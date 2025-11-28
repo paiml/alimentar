@@ -578,4 +578,409 @@ mod tests {
         let iter_debug = format!("{:?}", iter);
         assert!(iter_debug.contains("WeightedDataLoaderIterator"));
     }
+
+    #[test]
+    fn test_weighted_loader_all_zero_weights() {
+        // All zero weights should fall back to uniform sampling
+        let dataset = create_test_dataset(10);
+        let weights = vec![0.0; 10];
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(5)
+            .num_samples(20)
+            .seed(42);
+
+        // Should still be able to iterate (falls back to uniform)
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        assert_eq!(batches.len(), 4); // 20 samples / 5 batch_size = 4 batches
+    }
+
+    #[test]
+    fn test_weighted_loader_single_nonzero_weight() {
+        // Only one item has weight, should sample only that item
+        let dataset = create_test_dataset(10);
+        let mut weights = vec![0.0; 10];
+        weights[5] = 1.0; // Only item 5 has weight
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(1)
+            .num_samples(10)
+            .seed(42);
+
+        let mut all_are_item_5 = true;
+        for batch in loader {
+            let ids = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .unwrap_or_else(|| panic!("Should be Int32Array"));
+            for i in 0..ids.len() {
+                if ids.value(i) != 5 {
+                    all_are_item_5 = false;
+                }
+            }
+        }
+        assert!(all_are_item_5, "All samples should be item 5");
+    }
+
+    #[test]
+    fn test_weighted_loader_large_dataset() {
+        // Test with larger dataset to verify performance
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new("value", DataType::Utf8, false),
+        ]));
+
+        let ids: Vec<i32> = (0..10000).collect();
+        let values: Vec<String> = ids.iter().map(|i| format!("item_{}", i)).collect();
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int32Array::from(ids)),
+                Arc::new(StringArray::from(values)),
+            ],
+        )
+        .ok()
+        .unwrap_or_else(|| panic!("Should create batch"));
+
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let weights: Vec<f32> = (0..10000).map(|i| (i % 10 + 1) as f32).collect();
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(100)
+            .num_samples(5000)
+            .seed(42);
+
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total_rows, 5000);
+    }
+
+    #[test]
+    fn test_weighted_loader_very_small_weights() {
+        // Test with very small but nonzero weights
+        let dataset = create_test_dataset(10);
+        let weights: Vec<f32> = (0..10).map(|i| (i + 1) as f32 * 1e-10).collect();
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(5)
+            .num_samples(20)
+            .seed(42);
+
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        assert_eq!(batches.len(), 4);
+    }
+
+    #[test]
+    fn test_weighted_loader_mixed_zero_nonzero() {
+        // Half zero, half nonzero weights
+        let dataset = create_test_dataset(10);
+        let weights: Vec<f32> = (0..10).map(|i| if i < 5 { 0.0 } else { 1.0 }).collect();
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(1)
+            .num_samples(100)
+            .seed(42);
+
+        let mut counts: HashMap<i32, usize> = HashMap::new();
+        for batch in loader {
+            let ids = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .unwrap_or_else(|| panic!("Should be Int32Array"));
+            for i in 0..ids.len() {
+                *counts.entry(ids.value(i)).or_insert(0) += 1;
+            }
+        }
+
+        // Items 0-4 should have 0 counts, items 5-9 should have counts
+        for i in 0..5 {
+            assert_eq!(
+                *counts.get(&i).unwrap_or(&0),
+                0,
+                "Item {} should not be sampled",
+                i
+            );
+        }
+        for i in 5..10 {
+            assert!(
+                *counts.get(&i).unwrap_or(&0) > 0,
+                "Item {} should be sampled",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_weighted_loader_undersample() {
+        // num_samples less than dataset size
+        let dataset = create_test_dataset(100);
+        let weights = vec![1.0; 100];
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(5)
+            .num_samples(20)
+            .seed(42);
+
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total_rows, 20);
+    }
+
+    #[test]
+    fn test_weighted_loader_exact_batch_multiple() {
+        // num_samples exactly divisible by batch_size
+        let dataset = create_test_dataset(100);
+        let weights = vec![1.0; 100];
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(10)
+            .num_samples(50);
+
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        assert_eq!(batches.len(), 5);
+        for batch in &batches {
+            assert_eq!(batch.num_rows(), 10);
+        }
+    }
+
+    #[test]
+    fn test_weighted_loader_negative_weight_error() {
+        let dataset = create_test_dataset(10);
+        let weights = vec![1.0, 2.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+
+        let result = WeightedDataLoader::new(dataset, weights);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_weighted_loader_single_item() {
+        let dataset = create_test_dataset(1);
+        let weights = vec![1.0];
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(1)
+            .num_samples(10);
+
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        assert_eq!(batches.len(), 10);
+
+        // All batches should have the same single row
+        for batch in batches {
+            assert_eq!(batch.num_rows(), 1);
+        }
+    }
+
+    #[test]
+    fn test_weighted_loader_oversample() {
+        // num_samples much larger than dataset size
+        let dataset = create_test_dataset(5);
+        let weights = vec![1.0; 5];
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(10)
+            .num_samples(100);
+
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total_rows, 100);
+    }
+
+    #[test]
+    fn test_weighted_loader_is_empty() {
+        // is_empty() returns dataset.is_empty(), not based on num_samples
+        let dataset = create_test_dataset(10);
+        let weights = vec![1.0; 10];
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"));
+
+        // Dataset has 10 items, so not empty
+        assert!(!loader.is_empty());
+        assert_eq!(loader.len(), 10);
+    }
+
+    #[test]
+    fn test_weighted_loader_len() {
+        // len() returns dataset.len(), not num_samples
+        let dataset = create_test_dataset(100);
+        let weights = vec![1.0; 100];
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .num_samples(42);
+
+        // len() returns dataset length
+        assert_eq!(loader.len(), 100);
+        // get_num_samples() returns configured num_samples
+        assert_eq!(loader.get_num_samples(), 42);
+    }
+
+    #[test]
+    fn test_weighted_loader_weight_length_mismatch() {
+        let dataset = create_test_dataset(10);
+        let weights = vec![1.0; 5]; // Wrong length
+
+        let result = WeightedDataLoader::new(dataset, weights);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_weighted_loader_very_large_weight() {
+        let dataset = create_test_dataset(3);
+        let weights = vec![1e10, 1.0, 1.0]; // First item has huge weight
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(1)
+            .num_samples(100)
+            .seed(42);
+
+        let mut counts: HashMap<i32, usize> = HashMap::new();
+        for batch in loader {
+            let ids = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .unwrap_or_else(|| panic!("Should be Int32Array"));
+            for i in 0..ids.len() {
+                *counts.entry(ids.value(i)).or_insert(0) += 1;
+            }
+        }
+
+        // First item should be sampled almost exclusively
+        let first_count = *counts.get(&0).unwrap_or(&0);
+        assert!(
+            first_count > 95,
+            "First item should dominate: {}",
+            first_count
+        );
+    }
+
+    #[test]
+    fn test_weighted_loader_extreme_weight_ratio() {
+        let dataset = create_test_dataset(2);
+        // 1000:1 weight ratio
+        let weights = vec![1000.0, 1.0];
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create loader"))
+            .batch_size(1)
+            .num_samples(1000)
+            .seed(42);
+
+        let mut counts: HashMap<i32, usize> = HashMap::new();
+        for batch in loader {
+            let ids = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .unwrap_or_else(|| panic!("Should be Int32Array"));
+            for i in 0..ids.len() {
+                *counts.entry(ids.value(i)).or_insert(0) += 1;
+            }
+        }
+
+        let first = *counts.get(&0).unwrap_or(&0);
+        let second = *counts.get(&1).unwrap_or(&0);
+
+        // First should be ~1000x more frequent than second
+        assert!(
+            first > 900,
+            "First should dominate: {} vs {}",
+            first,
+            second
+        );
+    }
+
+    #[test]
+    fn test_weighted_loader_reweight_zero() {
+        let dataset = create_test_dataset(5);
+        // Zero reweight factor creates all-zero weights
+        let loader = WeightedDataLoader::with_reweight(dataset, 0.0);
+        assert!(loader.is_ok());
+        let loader = loader.ok().unwrap();
+        // All weights should be 0.0
+        assert!(loader.weights().iter().all(|&w| w == 0.0));
+    }
+
+    #[test]
+    fn test_weighted_loader_size_hint_drop_last_edge() {
+        let dataset = create_test_dataset(10);
+        let weights = vec![1.0; 10];
+
+        // 10 samples, batch_size 3, drop_last=true -> 3 full batches
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap()
+            .batch_size(3)
+            .num_samples(10)
+            .drop_last(true);
+
+        assert_eq!(loader.num_batches(), 3);
+    }
+
+    #[test]
+    fn test_weighted_loader_size_hint_no_drop_last() {
+        let dataset = create_test_dataset(10);
+        let weights = vec![1.0; 10];
+
+        // 10 samples, batch_size 3, drop_last=false -> 4 batches
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap()
+            .batch_size(3)
+            .num_samples(10)
+            .drop_last(false);
+
+        assert_eq!(loader.num_batches(), 4);
+    }
+
+    #[test]
+    fn test_weighted_loader_iteration_with_drop_last() {
+        let dataset = create_test_dataset(10);
+        let weights = vec![1.0; 10];
+
+        let loader = WeightedDataLoader::new(dataset, weights)
+            .ok()
+            .unwrap()
+            .batch_size(4)
+            .num_samples(10)
+            .drop_last(true)
+            .seed(42);
+
+        let batches: Vec<RecordBatch> = loader.into_iter().collect();
+        // 10 samples / 4 batch_size with drop_last = 2 full batches
+        assert_eq!(batches.len(), 2);
+        for batch in batches {
+            assert_eq!(batch.num_rows(), 4);
+        }
+    }
 }

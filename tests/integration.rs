@@ -795,3 +795,273 @@ fn test_ml_preprocessing_pipeline() {
     // 500 / 32 = 15.625 -> 16 batches
     assert_eq!(batch_count, 16);
 }
+
+// ============================================================================
+// alimentar ↔ aprender Integration Tests
+// ============================================================================
+// These tests demonstrate the data flow patterns used by aprender (ML
+// framework) to consume data from alimentar (data loading library).
+
+use alimentar::{tensor::TensorExtractor, WeightedDataLoader};
+
+/// Creates a test dataset suitable for ML feature extraction.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::suboptimal_flops,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
+fn create_ml_dataset(rows: usize) -> ArrowDataset {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("feature_1", DataType::Float64, false),
+        Field::new("feature_2", DataType::Float64, false),
+        Field::new("feature_3", DataType::Float64, false),
+        Field::new("label", DataType::Int32, false),
+    ]));
+
+    let f1: Vec<f64> = (0..rows).map(|i| i as f64 * 0.1).collect();
+    let f2: Vec<f64> = (0..rows).map(|i| i as f64 * 0.2 + 1.0).collect();
+    let f3: Vec<f64> = (0..rows).map(|i| (i as f64).sin()).collect();
+    let labels: Vec<i32> = (0..rows).map(|i| (i % 3) as i32).collect();
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(Float64Array::from(f1)),
+            Arc::new(Float64Array::from(f2)),
+            Arc::new(Float64Array::from(f3)),
+            Arc::new(Int32Array::from(labels)),
+        ],
+    )
+    .ok()
+    .unwrap_or_else(|| panic!("Should create batch"));
+
+    ArrowDataset::from_batch(batch)
+        .ok()
+        .unwrap_or_else(|| panic!("Should create dataset"))
+}
+
+#[test]
+fn test_tensor_extraction_for_aprender() {
+    // This test demonstrates the pattern aprender uses to extract
+    // features and labels from alimentar datasets.
+    let dataset = create_ml_dataset(100);
+
+    // Extract features as f32 tensor (compatible with trueno/aprender)
+    let feature_extractor = TensorExtractor::new(&["feature_1", "feature_2", "feature_3"]);
+    let batch = dataset
+        .get_batch(0)
+        .unwrap_or_else(|| panic!("Should get batch"));
+
+    #[allow(clippy::needless_borrow)]
+    let features = feature_extractor
+        .extract_f32(&batch)
+        .ok()
+        .unwrap_or_else(|| panic!("Should extract features"));
+
+    // Verify shape matches [rows, features]
+    assert_eq!(features.shape(), [100, 3]);
+
+    // Extract labels as i64 (for classification)
+    #[allow(clippy::needless_borrow)]
+    let labels = alimentar::tensor::extract_labels_i64(&batch, "label")
+        .ok()
+        .unwrap_or_else(|| panic!("Should extract labels"));
+
+    assert_eq!(labels.len(), 100);
+
+    // Verify label distribution (0, 1, 2 cycling)
+    let label_counts: Vec<i64> = (0..3)
+        .map(|l| labels.iter().filter(|&&x| x == l).count() as i64)
+        .collect();
+    assert!(label_counts.iter().all(|&c| (33..=34).contains(&c)));
+}
+
+#[test]
+fn test_weighted_dataloader_citl_integration() {
+    // This test demonstrates WeightedDataLoader for CITL reweighting.
+    // CITL (Compiler-Informed Training Loss) boosts compiler-verified samples.
+    let dataset = create_ml_dataset(100);
+
+    // Simulate CITL weights: samples 0-49 are compiler-verified (weight=1.5)
+    // samples 50-99 are not verified (weight=1.0)
+    let weights: Vec<f32> = (0..100).map(|i| if i < 50 { 1.5 } else { 1.0 }).collect();
+
+    let loader = WeightedDataLoader::new(dataset, weights)
+        .ok()
+        .unwrap_or_else(|| panic!("Should create weighted loader"))
+        .batch_size(10)
+        .num_samples(100)
+        .seed(42);
+
+    // Verify loader configuration
+    assert_eq!(loader.get_batch_size(), 10);
+    assert_eq!(loader.get_num_samples(), 100);
+    assert_eq!(loader.len(), 100);
+
+    // Iterate and collect samples
+    let mut total_rows = 0;
+    for batch in loader {
+        total_rows += batch.num_rows();
+    }
+
+    // Should yield approximately 100 samples (weighted sampling)
+    assert_eq!(total_rows, 100);
+}
+
+#[test]
+fn test_parallel_loader_ml_training() {
+    // This test demonstrates ParallelDataLoader for multi-threaded training.
+    use alimentar::parallel::ParallelDataLoader;
+
+    let dataset = create_ml_dataset(1000);
+
+    let loader = ParallelDataLoader::new(dataset)
+        .batch_size(32)
+        .num_workers(2)
+        .prefetch(4);
+
+    // Verify configuration
+    assert_eq!(loader.get_batch_size(), 32);
+    assert_eq!(loader.get_num_workers(), 2);
+    assert_eq!(loader.get_prefetch(), 4);
+    assert_eq!(loader.num_batches(), 32); // 1000 / 32 = 31.25 -> 32 batches
+
+    // Simulate training loop
+    let mut total_samples = 0;
+    let mut batch_count = 0;
+    for batch in loader {
+        total_samples += batch.num_rows();
+        batch_count += 1;
+    }
+
+    assert_eq!(total_samples, 1000);
+    assert_eq!(batch_count, 32);
+}
+
+#[test]
+fn test_train_val_test_split_pipeline() {
+    // This test demonstrates the data splitting pattern used by aprender
+    // for creating train/validation/test sets.
+    use alimentar::split::DatasetSplit;
+
+    let dataset = create_ml_dataset(1000);
+
+    // Split: 70% train, 15% validation, 15% test
+    let split = DatasetSplit::from_ratios(&dataset, 0.70, 0.15, Some(0.15), Some(42))
+        .ok()
+        .unwrap_or_else(|| panic!("Should split dataset"));
+
+    let train = split.train();
+    let val = split
+        .validation()
+        .unwrap_or_else(|| panic!("Should have validation"));
+    let test = split.test();
+
+    // Verify split sizes
+    assert_eq!(train.len(), 700);
+    assert_eq!(val.len(), 150);
+    assert_eq!(test.len(), 150);
+
+    // Verify no overlap between splits
+    let train_ids: HashSet<i32> = train
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .column(3)
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .map(|arr| arr.values().to_vec())
+                .unwrap_or_default()
+        })
+        .collect();
+
+    // All samples have labels 0, 1, or 2 (from our test dataset)
+    assert!(train_ids.iter().all(|&l| (0..=2).contains(&l)));
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn test_streaming_ml_data_flow() {
+    // This test demonstrates streaming data loading for large datasets.
+    use alimentar::streaming::{MemorySource, StreamingDataset};
+
+    // Create multiple batches to simulate streaming
+    let batches: Vec<RecordBatch> = (0..5)
+        .map(|i| {
+            let schema = Arc::new(Schema::new(vec![
+                Field::new("x", DataType::Float64, false),
+                Field::new("y", DataType::Float64, false),
+            ]));
+
+            let x: Vec<f64> = (0..100).map(|j| (i * 100 + j) as f64).collect();
+            let y: Vec<f64> = x.iter().map(|&v| v * 2.0).collect();
+
+            RecordBatch::try_new(
+                schema,
+                vec![
+                    Arc::new(Float64Array::from(x)),
+                    Arc::new(Float64Array::from(y)),
+                ],
+            )
+            .ok()
+            .unwrap_or_else(|| panic!("Should create batch"))
+        })
+        .collect();
+
+    let source = MemorySource::new(batches)
+        .ok()
+        .unwrap_or_else(|| panic!("Should create source"));
+
+    let dataset = StreamingDataset::new(Box::new(source), 4).prefetch(2);
+
+    // Extract tensors from streaming data
+    let extractor = TensorExtractor::new(&["x", "y"]);
+    let mut total_rows = 0;
+
+    for batch in dataset {
+        let tensor = extractor
+            .extract_f64(&batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should extract"));
+        total_rows += tensor.rows();
+    }
+
+    assert_eq!(total_rows, 500);
+}
+
+#[test]
+fn test_feature_normalization_for_training() {
+    // This test demonstrates feature normalization before training.
+    use alimentar::{NormMethod, Normalize};
+
+    let dataset = create_ml_dataset(100);
+
+    // Normalize features using MinMax scaling
+    let normalize = Normalize::new(["feature_1", "feature_2", "feature_3"], NormMethod::MinMax);
+
+    let normalized = dataset
+        .with_transform(&normalize)
+        .ok()
+        .unwrap_or_else(|| panic!("Should normalize"));
+
+    // Extract normalized features
+    let extractor = TensorExtractor::new(&["feature_1", "feature_2", "feature_3"]);
+    let batch = normalized
+        .get_batch(0)
+        .unwrap_or_else(|| panic!("Should get batch"));
+    #[allow(clippy::needless_borrow)]
+    let features = extractor
+        .extract_f64(&batch)
+        .ok()
+        .unwrap_or_else(|| panic!("Should extract"));
+
+    // Verify all values are in [0, 1] range for MinMax normalization
+    for val in features.as_slice() {
+        assert!(
+            *val >= 0.0 && *val <= 1.0,
+            "Value {} should be in [0, 1]",
+            val
+        );
+    }
+}

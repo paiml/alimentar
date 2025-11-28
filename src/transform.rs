@@ -3456,4 +3456,280 @@ mod tests {
         assert_eq!(result.schema().field(1).name(), "name");
         assert_eq!(result.schema().field(2).name(), "id");
     }
+
+    #[test]
+    fn test_cast_incompatible_type() {
+        // Try to cast string to int - should fail
+        let schema = Arc::new(Schema::new(vec![Field::new("text", DataType::Utf8, false)]));
+        let arr = StringArray::from(vec!["hello", "world"]);
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(arr)])
+            .ok()
+            .unwrap_or_else(|| panic!("batch"));
+
+        let cast = Cast::new(vec![("text", DataType::Int32)]);
+        let result = cast.apply(batch);
+        // Arrow cast will fail for incompatible types
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rename_nonexistent_column() {
+        let batch = create_test_batch();
+        let rename = Rename::from_pairs([("nonexistent", "new_name")]);
+        let result = rename.apply(batch);
+        // Renaming nonexistent column should succeed (no-op)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_fillnull_nonexistent_column() {
+        let batch = create_test_batch();
+        let fillnull = FillNull::new("nonexistent", FillStrategy::Int(42));
+        let result = fillnull.apply(batch);
+        // FillNull on nonexistent column returns error
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unique_empty_batch() {
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+        let arr = Int32Array::from(Vec::<i32>::new());
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(arr)])
+            .ok()
+            .unwrap_or_else(|| panic!("batch"));
+
+        let unique = Unique::by(["id"]);
+        let result = unique.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 0);
+    }
+
+    #[test]
+    fn test_normalize_nonexistent_column() {
+        let batch = create_test_batch();
+        let normalize = Normalize::new(["nonexistent"], NormMethod::MinMax);
+        let result = normalize.apply(batch);
+        // Normalizing nonexistent column returns Ok (skips the column)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_take_beyond_bounds() {
+        let batch = create_test_batch(); // 5 rows
+        let take = Take::new(100); // Request more than available
+        let result = take.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 5); // Should return all rows
+    }
+
+    #[test]
+    fn test_skip_beyond_bounds() {
+        let batch = create_test_batch(); // 5 rows
+        let skip = Skip::new(100); // Skip more than available
+        let result = skip.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 0); // Should return empty
+    }
+
+    #[test]
+    fn test_chain_empty_transforms() {
+        let batch = create_test_batch();
+        let chain: Chain = Chain::new();
+        let result = chain.apply(batch.clone());
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), batch.num_rows());
+    }
+
+    #[test]
+    fn test_filter_all_rows_filtered() {
+        let batch = create_test_batch();
+        // Filter that removes all rows (5 rows in test batch)
+        let filter = Filter::new(|_batch: &RecordBatch| {
+            Ok(arrow::array::BooleanArray::from(vec![false; 5]))
+        });
+        let result = filter.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 0);
+    }
+
+    #[test]
+    fn test_map_error_propagation() {
+        let batch = create_test_batch();
+        // Map that returns error
+        let map = Map::new(|_batch: RecordBatch| Err(crate::Error::transform("Test error")));
+        let result = map.apply(batch);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "shuffle")]
+    fn test_sample_zero_count() {
+        let batch = create_test_batch();
+        let sample = Sample::new(0);
+        let result = sample.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 0);
+    }
+
+    #[test]
+    #[cfg(feature = "shuffle")]
+    fn test_sample_fraction_zero() {
+        let batch = create_test_batch();
+        let sample = Sample::fraction(0.0);
+        let result = sample.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 0);
+    }
+
+    #[test]
+    #[cfg(feature = "shuffle")]
+    fn test_sample_fraction_full() {
+        let batch = create_test_batch();
+        let sample = Sample::fraction(1.0);
+        let result = sample.apply(batch.clone());
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), batch.num_rows());
+    }
+
+    #[test]
+    #[cfg(feature = "shuffle")]
+    fn test_sample_fraction_negative_clamped() {
+        let sample = Sample::fraction(-0.5);
+        // Negative fraction should be clamped to 0.0
+        assert_eq!(sample.sample_fraction(), Some(0.0));
+
+        let batch = create_test_batch();
+        let result = sample.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 0);
+    }
+
+    #[test]
+    #[cfg(feature = "shuffle")]
+    fn test_sample_fraction_over_one_clamped() {
+        let sample = Sample::fraction(1.5);
+        // Fraction > 1.0 should be clamped to 1.0
+        assert_eq!(sample.sample_fraction(), Some(1.0));
+
+        let batch = create_test_batch();
+        let result = sample.apply(batch.clone());
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), batch.num_rows());
+    }
+
+    #[test]
+    fn test_sort_empty_columns_vector() {
+        let batch = create_test_batch();
+        let sort = Sort::by_columns::<String>(vec![]);
+        let result = sort.apply(batch.clone());
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        // Empty sort columns should return unchanged batch
+        assert_eq!(result.num_rows(), batch.num_rows());
+    }
+
+    #[test]
+    fn test_sort_multi_column_one_missing() {
+        let batch = create_test_batch();
+        let sort = Sort::by_columns(vec![
+            ("value".to_string(), SortOrder::Ascending),
+            ("nonexistent".to_string(), SortOrder::Ascending),
+        ]);
+        let result = sort.apply(batch);
+        // Should error because second column doesn't exist
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sort_single_row_unchanged() {
+        // Create single-row batch
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(vec![42]))])
+            .ok()
+            .unwrap();
+
+        let sort = Sort::by_columns(vec![("id".to_string(), SortOrder::Ascending)]);
+        let result = sort.apply(batch.clone());
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        // Single row should be returned unchanged
+        assert_eq!(result.num_rows(), 1);
+    }
+
+    #[test]
+    fn test_take_zero_rows() {
+        let batch = create_test_batch();
+        let take = Take::new(0);
+        let result = take.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 0);
+    }
+
+    #[test]
+    fn test_skip_zero_rows() {
+        let batch = create_test_batch();
+        let original_rows = batch.num_rows();
+        let skip = Skip::new(0);
+        let result = skip.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        // Skipping 0 should return all rows
+        assert_eq!(result.num_rows(), original_rows);
+    }
+
+    #[test]
+    fn test_boxed_transform_delegation() {
+        let batch = create_test_batch();
+        let take = Take::new(2);
+        let boxed: Box<dyn Transform> = Box::new(take);
+        let result = boxed.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 2);
+    }
+
+    #[test]
+    fn test_arc_transform_delegation() {
+        use std::sync::Arc as StdArc;
+        let batch = create_test_batch();
+        let take = Take::new(3);
+        let arced: StdArc<dyn Transform> = StdArc::new(take);
+        let result = arced.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 3);
+    }
+
+    #[test]
+    fn test_chain_single_transform() {
+        let batch = create_test_batch();
+        let chain = Chain::new().then(Take::new(2));
+        let result = chain.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        assert_eq!(result.num_rows(), 2);
+    }
+
+    #[test]
+    fn test_drop_nonexistent_columns_unchanged() {
+        let batch = create_test_batch();
+        let original_cols = batch.num_columns();
+        let drop = Drop::new(["nonexistent_column", "also_nonexistent"]);
+        let result = drop.apply(batch);
+        assert!(result.is_ok());
+        let result = result.ok().unwrap();
+        // Dropping nonexistent columns should return unchanged batch
+        assert_eq!(result.num_columns(), original_cols);
+    }
 }

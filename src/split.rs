@@ -916,4 +916,130 @@ mod tests {
         assert_eq!(cloned.train().len(), split.train().len());
         assert_eq!(cloned.test().len(), split.test().len());
     }
+
+    #[test]
+    fn test_extreme_ratio_99_1() {
+        let dataset = make_test_dataset(100);
+        let split =
+            DatasetSplit::from_ratios(&dataset, 0.99, 0.01, None, None).expect("split failed");
+
+        assert_eq!(split.train().len(), 99);
+        assert_eq!(split.test().len(), 1);
+    }
+
+    #[test]
+    fn test_extreme_ratio_50_50() {
+        let dataset = make_test_dataset(100);
+        let split =
+            DatasetSplit::from_ratios(&dataset, 0.5, 0.5, None, None).expect("split failed");
+
+        assert_eq!(split.train().len(), 50);
+        assert_eq!(split.test().len(), 50);
+    }
+
+    #[test]
+    fn test_negative_train_ratio_rejected() {
+        let dataset = make_test_dataset(100);
+        let result = DatasetSplit::from_ratios(&dataset, -0.5, 0.5, None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_zero_test_ratio_rejected() {
+        let dataset = make_test_dataset(100);
+        let result = DatasetSplit::from_ratios(&dataset, 1.0, 0.0, None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_negative_val_ratio_rejected() {
+        let dataset = make_test_dataset(100);
+        let result = DatasetSplit::from_ratios(&dataset, 0.6, 0.5, Some(-0.1), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_single_row_minimum_sizes() {
+        let dataset = make_test_dataset(2);
+        let split =
+            DatasetSplit::from_ratios(&dataset, 0.5, 0.5, None, None).expect("split failed");
+
+        // Each should get at least 1 row
+        assert!(split.train().len() >= 1);
+        assert!(split.test().len() >= 1);
+    }
+
+    #[test]
+    fn test_ratios_slightly_over_one() {
+        let dataset = make_test_dataset(100);
+        // Sum is 1.01, should be rejected
+        let result = DatasetSplit::from_ratios(&dataset, 0.81, 0.2, None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ratios_slightly_under_one() {
+        let dataset = make_test_dataset(100);
+        // Sum is 0.99, should be rejected
+        let result = DatasetSplit::from_ratios(&dataset, 0.79, 0.2, None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_getters_return_correct_data() {
+        let train = make_test_dataset(80);
+        let test = make_test_dataset(20);
+        let val = make_test_dataset(10);
+
+        let split = DatasetSplit::with_validation(train.clone(), test.clone(), val.clone());
+
+        assert_eq!(split.train().len(), 80);
+        assert_eq!(split.test().len(), 20);
+        assert_eq!(split.validation().map(|v| v.len()), Some(10));
+    }
+
+    #[test]
+    fn test_validation_none_for_two_way_split() {
+        let train = make_test_dataset(80);
+        let test = make_test_dataset(20);
+
+        let split = DatasetSplit::new(train, test);
+
+        assert!(split.validation().is_none());
+    }
+
+    #[test]
+    fn test_stratified_empty_dataset() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("x", DataType::Float64, false),
+            Field::new("label", DataType::Int32, false),
+        ]));
+        let x_array = arrow::array::Float64Array::from(Vec::<f64>::new());
+        let label_array = Int32Array::from(Vec::<i32>::new());
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(x_array), Arc::new(label_array)])
+            .expect("batch");
+        let dataset = ArrowDataset::from_batch(batch).expect("dataset");
+
+        let result = DatasetSplit::stratified(&dataset, "label", 0.8, 0.2, None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stratified_zero_test_ratio_rejected() {
+        let dataset = make_test_dataset(100);
+        let result = DatasetSplit::stratified(&dataset, "y", 1.0, 0.0, None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_split_preserves_all_rows() {
+        let dataset = make_test_dataset(100);
+        let split =
+            DatasetSplit::from_ratios(&dataset, 0.6, 0.2, Some(0.2), None).expect("split failed");
+
+        let total = split.train().len()
+            + split.test().len()
+            + split.validation().map(|v| v.len()).unwrap_or(0);
+        assert_eq!(total, 100);
+    }
 }

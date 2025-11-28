@@ -29,7 +29,8 @@
 //! }
 //! ```
 
-#![forbid(unsafe_code)]
+// unsafe_code is forbidden except where explicitly allowed (e.g., mmap module)
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
@@ -75,12 +76,16 @@ pub mod format;
 #[cfg(feature = "hf-hub")]
 pub mod hf_hub;
 pub mod imbalance;
+#[cfg(feature = "mmap")]
+pub mod mmap;
+pub mod parallel;
 pub mod quality;
 pub mod registry;
 pub mod serve;
 pub mod sketch;
 pub mod split;
 pub mod streaming;
+pub mod tensor;
 pub mod transform;
 #[cfg(feature = "shuffle")]
 pub mod weighted;
@@ -105,6 +110,9 @@ pub use imbalance::{
     ClassDistribution, ImbalanceDetector, ImbalanceMetrics, ImbalanceRecommendation,
     ImbalanceReport, ImbalanceSeverity,
 };
+#[cfg(feature = "mmap")]
+pub use mmap::{MmapDataset, MmapDatasetBuilder};
+pub use parallel::{ParallelDataLoader, ParallelDataLoaderBuilder};
 pub use quality::{ColumnQuality, QualityChecker, QualityIssue, QualityReport};
 pub use sketch::{
     Centroid, DDSketch, DataSketch, DistributedDriftDetector, SketchDriftResult, SketchType,

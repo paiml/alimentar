@@ -272,6 +272,7 @@ fn test_s3_registry_workflow() {
         tags: vec!["test".to_string(), "s3".to_string()],
         source: None,
         citation: None,
+        sha256: None,
     };
 
     registry
@@ -338,6 +339,7 @@ fn test_s3_registry_versioning() {
         tags: vec![],
         source: None,
         citation: None,
+        sha256: None,
     };
 
     // Publish v1
@@ -403,6 +405,7 @@ fn test_s3_large_dataset() {
         tags: vec!["large".to_string()],
         source: None,
         citation: None,
+        sha256: None,
     };
 
     // Publish

@@ -911,4 +911,350 @@ mod tests {
         let result = dataset.reset();
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_streaming_dataset_fill_buffer_error() {
+        // Test that iterator returns None on fill_buffer error
+        struct ErrorSource {
+            schema: SchemaRef,
+            error_on_call: usize,
+            call_count: usize,
+        }
+
+        impl DataSource for ErrorSource {
+            fn schema(&self) -> SchemaRef {
+                Arc::clone(&self.schema)
+            }
+
+            fn next_batch(&mut self) -> Result<Option<RecordBatch>> {
+                self.call_count += 1;
+                if self.call_count >= self.error_on_call {
+                    Err(crate::Error::storage("Simulated error"))
+                } else {
+                    Ok(Some(create_test_batch(0, 5)))
+                }
+            }
+        }
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new("name", DataType::Utf8, false),
+        ]));
+
+        let source = ErrorSource {
+            schema,
+            error_on_call: 3, // Error on 3rd call (after 2 successful batches)
+            call_count: 0,
+        };
+
+        // Use prefetch 1 so we get 1 batch at a time
+        let mut dataset = StreamingDataset::new(Box::new(source), 4).prefetch(1);
+
+        // First two calls should succeed
+        let first = dataset.next();
+        assert!(first.is_some());
+        let second = dataset.next();
+        assert!(second.is_some());
+
+        // Third call triggers error in fill_buffer, returns None
+        let third = dataset.next();
+        assert!(third.is_none());
+    }
+
+    #[test]
+    fn test_streaming_dataset_large_prefetch() {
+        let batches = vec![
+            create_test_batch(0, 10),
+            create_test_batch(10, 10),
+            create_test_batch(20, 10),
+            create_test_batch(30, 10),
+            create_test_batch(40, 10),
+        ];
+
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+
+        // Prefetch more than available batches
+        let dataset = StreamingDataset::new(Box::new(source), 10).prefetch(100);
+
+        let collected: Vec<RecordBatch> = dataset.collect();
+        assert_eq!(collected.len(), 5);
+    }
+
+    #[test]
+    fn test_memory_source_multiple_iterations() {
+        let batches = vec![create_test_batch(0, 5), create_test_batch(5, 5)];
+
+        let mut source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+
+        // First iteration
+        let mut count1 = 0;
+        while let Ok(Some(_)) = source.next_batch() {
+            count1 += 1;
+        }
+        assert_eq!(count1, 2);
+
+        // Reset and iterate again
+        source
+            .reset()
+            .ok()
+            .unwrap_or_else(|| panic!("Should reset"));
+
+        let mut count2 = 0;
+        while let Ok(Some(_)) = source.next_batch() {
+            count2 += 1;
+        }
+        assert_eq!(count2, 2);
+    }
+
+    #[test]
+    fn test_chained_source_exhaustion() {
+        let source1 = MemorySource::new(vec![create_test_batch(0, 3)])
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+        let source2 = MemorySource::new(vec![create_test_batch(3, 2)])
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+        let source3 = MemorySource::new(vec![create_test_batch(5, 1)])
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+
+        let mut chained = ChainedSource::new(vec![
+            Box::new(source1),
+            Box::new(source2),
+            Box::new(source3),
+        ])
+        .ok()
+        .unwrap_or_else(|| panic!("Should create chained"));
+
+        let mut batches = Vec::new();
+        while let Ok(Some(batch)) = chained.next_batch() {
+            batches.push(batch);
+        }
+
+        assert_eq!(batches.len(), 3);
+        assert_eq!(batches[0].num_rows(), 3);
+        assert_eq!(batches[1].num_rows(), 2);
+        assert_eq!(batches[2].num_rows(), 1);
+    }
+
+    #[test]
+    fn test_streaming_dataset_empty_iteration() {
+        struct EmptySource {
+            schema: SchemaRef,
+        }
+
+        impl DataSource for EmptySource {
+            fn schema(&self) -> SchemaRef {
+                Arc::clone(&self.schema)
+            }
+
+            fn next_batch(&mut self) -> Result<Option<RecordBatch>> {
+                Ok(None)
+            }
+        }
+
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+
+        let source = EmptySource { schema };
+        let dataset = StreamingDataset::new(Box::new(source), 4);
+
+        let collected: Vec<RecordBatch> = dataset.collect();
+        assert!(collected.is_empty());
+    }
+
+    #[test]
+    fn test_streaming_dataset_single_batch() {
+        let batches = vec![create_test_batch(0, 100)];
+
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+
+        let dataset = StreamingDataset::new(Box::new(source), 1);
+
+        let collected: Vec<RecordBatch> = dataset.collect();
+        assert_eq!(collected.len(), 1);
+        assert_eq!(collected[0].num_rows(), 100);
+    }
+
+    #[test]
+    fn test_parquet_source_batch_size_variation() {
+        // Create test data
+        let batch = create_test_batch(0, 100);
+        let dataset = crate::ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("batch_size_test.parquet");
+        dataset
+            .to_parquet(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should write parquet"));
+
+        // Test with different batch sizes
+        for batch_size in [1, 10, 50, 100, 200] {
+            let source = ParquetSource::new(&path, batch_size)
+                .ok()
+                .unwrap_or_else(|| panic!("Should create source"));
+
+            let streaming = StreamingDataset::new(Box::new(source), 4);
+            let total: usize = streaming.map(|b| b.num_rows()).sum();
+            assert_eq!(
+                total, 100,
+                "Batch size {} should read all 100 rows",
+                batch_size
+            );
+        }
+    }
+
+    #[test]
+    fn test_chained_source_single_source() {
+        let batches = vec![create_test_batch(0, 50)];
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("source"));
+
+        let chained = ChainedSource::new(vec![Box::new(source)])
+            .ok()
+            .unwrap_or_else(|| panic!("chained"));
+        let dataset = StreamingDataset::new(Box::new(chained), 4);
+
+        let collected: Vec<RecordBatch> = dataset.collect();
+        assert_eq!(collected.len(), 1);
+        assert_eq!(collected[0].num_rows(), 50);
+    }
+
+    #[test]
+    fn test_chained_source_multiple_sources() {
+        let source1 = MemorySource::new(vec![create_test_batch(0, 30)])
+            .ok()
+            .unwrap_or_else(|| panic!("source1"));
+        let source2 = MemorySource::new(vec![create_test_batch(30, 20)])
+            .ok()
+            .unwrap_or_else(|| panic!("source2"));
+
+        let chained = ChainedSource::new(vec![Box::new(source1), Box::new(source2)])
+            .ok()
+            .unwrap_or_else(|| panic!("chained"));
+        let dataset = StreamingDataset::new(Box::new(chained), 4);
+
+        let collected: Vec<RecordBatch> = dataset.collect();
+        assert_eq!(collected.len(), 2);
+
+        let total: usize = collected.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total, 50);
+    }
+
+    #[test]
+    fn test_chained_source_empty_sources_vec() {
+        // Empty sources vec should return an error
+        let result: std::result::Result<ChainedSource, Error> = ChainedSource::new(vec![]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_chained_source_with_empty_yielding_sources() {
+        struct EmptyYieldSource {
+            schema: SchemaRef,
+        }
+        impl DataSource for EmptyYieldSource {
+            fn schema(&self) -> SchemaRef {
+                Arc::clone(&self.schema)
+            }
+            fn next_batch(&mut self) -> Result<Option<RecordBatch>> {
+                Ok(None)
+            }
+        }
+
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+
+        let source1 = EmptyYieldSource {
+            schema: Arc::clone(&schema),
+        };
+        let source2 = EmptyYieldSource { schema };
+
+        let chained = ChainedSource::new(vec![Box::new(source1), Box::new(source2)])
+            .ok()
+            .unwrap_or_else(|| panic!("chained"));
+        let dataset = StreamingDataset::new(Box::new(chained), 4);
+
+        let collected: Vec<RecordBatch> = dataset.collect();
+        assert!(collected.is_empty());
+    }
+
+    #[test]
+    fn test_streaming_dataset_prefetch_config() {
+        let batches = vec![create_test_batch(0, 100)];
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("source"));
+
+        let dataset = StreamingDataset::new(Box::new(source), 4).prefetch(2);
+
+        let collected: Vec<RecordBatch> = dataset.collect();
+        assert_eq!(collected.len(), 1);
+    }
+
+    #[test]
+    fn test_chained_source_size_hint() {
+        let source1 = MemorySource::new(vec![create_test_batch(0, 50)])
+            .ok()
+            .unwrap_or_else(|| panic!("source1"));
+        let source2 = MemorySource::new(vec![create_test_batch(50, 50)])
+            .ok()
+            .unwrap_or_else(|| panic!("source2"));
+
+        let chained = ChainedSource::new(vec![Box::new(source1), Box::new(source2)])
+            .ok()
+            .unwrap_or_else(|| panic!("chained"));
+
+        // Should sum size hints from all sources
+        assert_eq!(chained.size_hint(), Some(100));
+    }
+
+    #[test]
+    fn test_streaming_dataset_buffer_size_one() {
+        let batches = vec![
+            create_test_batch(0, 25),
+            create_test_batch(25, 25),
+            create_test_batch(50, 25),
+            create_test_batch(75, 25),
+        ];
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("source"));
+
+        // Minimal buffer
+        let dataset = StreamingDataset::new(Box::new(source), 1);
+
+        let collected: Vec<RecordBatch> = dataset.collect();
+        assert_eq!(collected.len(), 4);
+
+        let total: usize = collected.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total, 100);
+    }
+
+    #[test]
+    fn test_parquet_source_invalid_path() {
+        let result = ParquetSource::new("/nonexistent/path/to/file.parquet", 100);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_memory_source_schema_consistency() {
+        let batches = vec![create_test_batch(0, 50), create_test_batch(50, 50)];
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("source"));
+
+        let schema = source.schema();
+        assert_eq!(schema.fields().len(), 2); // id and name columns
+    }
 }

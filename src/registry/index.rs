@@ -116,6 +116,9 @@ pub struct DatasetMetadata {
     /// Citation information.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub citation: Option<String>,
+    /// SHA-256 hash of the dataset content (hex string).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
 }
 
 impl DatasetMetadata {
@@ -141,6 +144,7 @@ pub struct DatasetMetadataBuilder {
     tags: Vec<String>,
     source: Option<String>,
     citation: Option<String>,
+    sha256: Option<String>,
 }
 
 impl DatasetMetadataBuilder {
@@ -186,6 +190,13 @@ impl DatasetMetadataBuilder {
         self
     }
 
+    /// Sets the SHA-256 hash for data provenance.
+    #[must_use]
+    pub fn sha256(mut self, hash: impl Into<String>) -> Self {
+        self.sha256 = Some(hash.into());
+        self
+    }
+
     /// Builds the metadata.
     pub fn build(self) -> DatasetMetadata {
         DatasetMetadata {
@@ -194,6 +205,7 @@ impl DatasetMetadataBuilder {
             tags: self.tags,
             source: self.source,
             citation: self.citation,
+            sha256: self.sha256,
         }
     }
 }

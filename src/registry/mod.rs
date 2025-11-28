@@ -388,6 +388,7 @@ mod tests {
             tags: vec!["test".to_string(), "example".to_string()],
             source: Some("unit test".to_string()),
             citation: None,
+            sha256: None,
         }
     }
 
@@ -471,6 +472,7 @@ mod tests {
             tags: vec!["ml".to_string()],
             source: None,
             citation: None,
+            sha256: None,
         };
 
         let metadata2 = DatasetMetadata {
@@ -479,6 +481,7 @@ mod tests {
             tags: vec!["nlp".to_string()],
             source: None,
             citation: None,
+            sha256: None,
         };
 
         registry
@@ -521,6 +524,7 @@ mod tests {
             tags: vec!["ml".to_string(), "vision".to_string()],
             source: None,
             citation: None,
+            sha256: None,
         };
 
         registry

@@ -170,10 +170,7 @@ impl AsyncPrefetchBuilder {
     /// # Errors
     ///
     /// Returns an error if the file cannot be opened.
-    pub fn from_parquet(
-        self,
-        path: impl AsRef<std::path::Path>,
-    ) -> Result<AsyncPrefetchDataset> {
+    pub fn from_parquet(self, path: impl AsRef<std::path::Path>) -> Result<AsyncPrefetchDataset> {
         let batch_size = self.batch_size.unwrap_or(1024);
         let prefetch_size = self.prefetch_size.unwrap_or(4);
 
@@ -447,5 +444,227 @@ mod tests {
         let dataset = AsyncPrefetchBuilder::new().from_source(Box::new(source));
 
         assert_eq!(dataset.schema().fields().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_async_prefetch_quick_exhaustion() {
+        // Test with source that quickly exhausts
+        struct QuickExhaustSource {
+            schema: SchemaRef,
+            exhausted: bool,
+        }
+
+        impl crate::streaming::DataSource for QuickExhaustSource {
+            fn schema(&self) -> SchemaRef {
+                Arc::clone(&self.schema)
+            }
+
+            fn next_batch(&mut self) -> crate::Result<Option<RecordBatch>> {
+                if self.exhausted {
+                    Ok(None)
+                } else {
+                    self.exhausted = true;
+                    Ok(Some(create_test_batches(1, 1)[0].clone()))
+                }
+            }
+        }
+
+        let source = QuickExhaustSource {
+            schema: create_test_batches(1, 1)[0].schema(),
+            exhausted: false,
+        };
+
+        let mut dataset = AsyncPrefetchDataset::new(Box::new(source), 4);
+
+        // First should succeed
+        let first = dataset.next().await;
+        assert!(first.is_some());
+        assert!(first.unwrap().is_ok());
+
+        // Second should be None (exhausted)
+        let second = dataset.next().await;
+        assert!(second.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_async_prefetch_single_batch() {
+        let batches = create_test_batches(1, 100);
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+
+        let mut dataset = AsyncPrefetchDataset::new(Box::new(source), 4);
+
+        let batch = dataset
+            .next()
+            .await
+            .unwrap_or_else(|| panic!("Should have batch"))
+            .ok()
+            .unwrap_or_else(|| panic!("Batch should be ok"));
+        assert_eq!(batch.num_rows(), 100);
+
+        // No more batches
+        assert!(dataset.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_async_prefetch_large_prefetch_size() {
+        // Prefetch size larger than available batches
+        let batches = create_test_batches(3, 10);
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+
+        let mut dataset = AsyncPrefetchDataset::new(Box::new(source), 100);
+
+        let mut count = 0;
+        while let Some(result) = dataset.next().await {
+            assert!(result.is_ok());
+            count += 1;
+        }
+        assert_eq!(count, 3);
+    }
+
+    #[tokio::test]
+    async fn test_async_prefetch_prefetch_size_one() {
+        // Minimal prefetch
+        let batches = create_test_batches(5, 10);
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+
+        let mut dataset = AsyncPrefetchDataset::new(Box::new(source), 1);
+
+        let mut count = 0;
+        while let Some(result) = dataset.next().await {
+            assert!(result.is_ok());
+            count += 1;
+        }
+        assert_eq!(count, 5);
+    }
+
+    #[tokio::test]
+    async fn test_async_prefetch_error_source() {
+        // Test with source that errors
+        struct ErrorSource {
+            schema: SchemaRef,
+            calls: usize,
+        }
+
+        impl crate::streaming::DataSource for ErrorSource {
+            fn schema(&self) -> SchemaRef {
+                Arc::clone(&self.schema)
+            }
+
+            fn next_batch(&mut self) -> crate::Result<Option<RecordBatch>> {
+                self.calls += 1;
+                if self.calls > 2 {
+                    Err(crate::Error::storage("Simulated error"))
+                } else {
+                    Ok(Some(create_test_batches(1, 5)[0].clone()))
+                }
+            }
+        }
+
+        let source = ErrorSource {
+            schema: create_test_batches(1, 1)[0].schema(),
+            calls: 0,
+        };
+
+        let mut dataset = AsyncPrefetchDataset::new(Box::new(source), 4);
+
+        // First two should succeed
+        let b1 = dataset.next().await;
+        assert!(b1.is_some());
+        assert!(b1.unwrap().is_ok());
+
+        let b2 = dataset.next().await;
+        assert!(b2.is_some());
+        assert!(b2.unwrap().is_ok());
+
+        // Third should be an error
+        let b3 = dataset.next().await;
+        assert!(b3.is_some());
+        assert!(b3.unwrap().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_async_prefetch_try_next_after_exhaustion() {
+        // Create source with one batch
+        let batches = create_test_batches(1, 5);
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+
+        let mut dataset = AsyncPrefetchDataset::new(Box::new(source), 4);
+
+        // Consume the single batch
+        let _ = dataset.next().await;
+
+        // Allow background task to complete
+        tokio::task::yield_now().await;
+
+        // try_next should return None (exhausted)
+        let result = dataset.try_next();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_builder_with_prefetch_size() {
+        let batches = create_test_batches(5, 10);
+        let source = MemorySource::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create source"));
+
+        let mut dataset = AsyncPrefetchBuilder::new()
+            .prefetch_size(2)
+            .from_source(Box::new(source));
+
+        let mut count = 0;
+        while let Some(result) = dataset.next().await {
+            assert!(result.is_ok());
+            count += 1;
+        }
+        assert_eq!(count, 5);
+    }
+
+    #[tokio::test]
+    async fn test_builder_from_parquet_roundtrip() {
+        // Create test data
+        let batch = create_test_batches(1, 50)[0].clone();
+        let dataset = crate::ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("builder_test.parquet");
+        dataset
+            .to_parquet(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should write parquet"));
+
+        // Read with builder
+        let mut async_dataset = AsyncPrefetchBuilder::new()
+            .batch_size(10)
+            .prefetch_size(3)
+            .from_parquet(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create async dataset"));
+
+        let mut total = 0;
+        while let Some(result) = async_dataset.next().await {
+            total += result.ok().unwrap().num_rows();
+        }
+        assert_eq!(total, 50);
+    }
+
+    #[test]
+    fn test_builder_debug() {
+        let builder = AsyncPrefetchBuilder::new().batch_size(32).prefetch_size(8);
+
+        let debug_str = format!("{:?}", builder);
+        assert!(debug_str.contains("AsyncPrefetchBuilder"));
     }
 }

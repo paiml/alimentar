@@ -78,6 +78,36 @@ jobs:
           files: lcov.info
           fail_ci_if_error: false
 
+  s3-integration:
+    name: S3 Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      minio:
+        image: minio/minio:latest
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        options: >-
+          --health-cmd "mc ready local || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+          --entrypoint "minio server /data"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Setup MinIO bucket
+        run: |
+          curl -LO https://dl.min.io/client/mc/release/linux-amd64/mc
+          chmod +x mc
+          ./mc alias set local http://localhost:9000 minioadmin minioadmin
+          ./mc mb local/alimentar-test --ignore-existing
+      - name: Run S3 integration tests
+        run: cargo test --features s3 s3_integration -- --ignored
+
   bench:
     name: Benchmarks
     runs-on: ubuntu-latest
