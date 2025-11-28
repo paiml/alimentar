@@ -1677,7 +1677,11 @@ fn cmd_fed_verify(manifests: &[PathBuf], format: &str) -> alimentar::Result<()> 
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
-    clippy::uninlined_format_args
+    clippy::uninlined_format_args,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::redundant_clone,
+    clippy::cast_lossless
 )]
 mod tests {
     use std::sync::Arc;

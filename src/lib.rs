@@ -33,6 +33,25 @@
 #![deny(missing_docs)]
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
+// Allow common test patterns
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::cast_lossless,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_precision_loss,
+        clippy::redundant_clone,
+        clippy::needless_collect,
+        clippy::too_many_lines,
+        clippy::for_kv_map,
+        clippy::bool_to_int_with_if,
+        clippy::float_cmp,
+        clippy::iter_on_single_items
+    )
+)]
 // Allow some pedantic lints for cleaner code
 #![allow(clippy::doc_markdown)]
 #![allow(clippy::uninlined_format_args)]
