@@ -66,6 +66,11 @@ enum Commands {
         #[command(subcommand)]
         source: ImportSource,
     },
+    /// HuggingFace Hub commands (push/upload datasets)
+    #[allow(clippy::doc_markdown)]
+    #[cfg(feature = "hf-hub")]
+    #[command(subcommand)]
+    Hub(HubCommands),
     /// Registry commands for dataset sharing and discovery
     #[command(subcommand)]
     Registry(RegistryCommands),
@@ -108,6 +113,32 @@ enum ImportSource {
         /// Data split (train, validation, test)
         #[arg(long, default_value = "train")]
         split: String,
+    },
+}
+
+/// HuggingFace Hub commands
+#[cfg(feature = "hf-hub")]
+#[derive(Subcommand)]
+enum HubCommands {
+    /// Push (upload) a dataset to HuggingFace Hub
+    #[allow(clippy::doc_markdown)]
+    Push {
+        /// Path to the parquet file to upload
+        input: PathBuf,
+        /// HuggingFace repository ID (e.g., "paiml/my-dataset")
+        repo_id: String,
+        /// Path in the repository (e.g., "data/train.parquet")
+        #[arg(short, long)]
+        path_in_repo: Option<String>,
+        /// Commit message for the upload
+        #[arg(short, long, default_value = "Upload via alimentar")]
+        message: String,
+        /// Path to README.md to upload as dataset card
+        #[arg(long)]
+        readme: Option<PathBuf>,
+        /// Make the dataset private
+        #[arg(long)]
+        private: bool,
     },
 }
 
@@ -447,6 +478,17 @@ pub fn run() -> ExitCode {
                 split,
             } => cmd_import_hf(&repo_id, &output, &revision, subset.as_deref(), &split),
         },
+        #[cfg(feature = "hf-hub")]
+        Commands::Hub(hub_cmd) => match hub_cmd {
+            HubCommands::Push {
+                input,
+                repo_id,
+                path_in_repo,
+                message,
+                readme,
+                private,
+            } => cmd_hub_push(&input, &repo_id, path_in_repo.as_deref(), &message, readme.as_ref(), private),
+        },
         Commands::Registry(registry_cmd) => match registry_cmd {
             RegistryCommands::Init { path } => cmd_registry_init(&path),
             RegistryCommands::List { path } => cmd_registry_list(&path),
@@ -763,6 +805,87 @@ fn cmd_import_hf(
         repo_id,
         data.len(),
         output.display()
+    );
+
+    Ok(())
+}
+
+/// Prints a quality warning for HuggingFace Hub uploads.
+#[cfg(feature = "hf-hub")]
+fn print_quality_warning() {
+    eprintln!();
+    eprintln!("WARNING: Data quality is CRITICAL for ML datasets!");
+    eprintln!("Publishing low-quality data harms the ML community.");
+    eprintln!();
+    eprintln!("Before publishing, verify quality with:");
+    eprintln!("  alimentar quality score <file.parquet>");
+    eprintln!();
+    eprintln!("Minimum recommended: Grade B (85%)");
+    eprintln!();
+    eprintln!("To improve quality, use:");
+    eprintln!("  aprender clean <input> -o <output>     # Clean data");
+    eprintln!("  entrenar augment <input> -o <output>   # Augment for training");
+    eprintln!();
+    eprintln!("See: https://paiml.github.io/alimentar/hf-hub/publishing.html");
+    eprintln!();
+}
+
+#[cfg(feature = "hf-hub")]
+fn cmd_hub_push(
+    input: &PathBuf,
+    repo_id: &str,
+    path_in_repo: Option<&str>,
+    message: &str,
+    readme: Option<&PathBuf>,
+    private: bool,
+) -> crate::Result<()> {
+    use crate::hf_hub::HfPublisher;
+
+    // Display quality warning
+    print_quality_warning();
+
+    // Validate input file exists
+    if !input.exists() {
+        return Err(crate::Error::io(
+            std::io::Error::new(std::io::ErrorKind::NotFound, "Input file not found"),
+            input,
+        ));
+    }
+
+    // Derive path_in_repo from filename if not specified
+    let path_in_repo = path_in_repo.map(String::from).unwrap_or_else(|| {
+        input
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "data.parquet".to_string())
+    });
+
+    println!("Pushing {} to {}...", input.display(), repo_id);
+
+    let publisher = HfPublisher::new(repo_id)
+        .with_private(private)
+        .with_commit_message(message);
+
+    // Create repo (idempotent - succeeds if already exists)
+    println!("Creating repository (if needed)...");
+    publisher.create_repo_sync()?;
+
+    // Upload parquet file
+    println!("Uploading {}...", path_in_repo);
+    publisher.upload_parquet_file_sync(input, &path_in_repo)?;
+
+    // Upload README if provided
+    if let Some(readme_path) = readme {
+        println!("Uploading README.md...");
+        let readme_content =
+            std::fs::read_to_string(readme_path).map_err(|e| crate::Error::io(e, readme_path))?;
+        publisher.upload_readme_validated_sync(&readme_content)?;
+    }
+
+    let visibility = if private { "private" } else { "public" };
+    println!(
+        "Successfully pushed to https://huggingface.co/datasets/{} ({})",
+        repo_id, visibility
     );
 
     Ok(())
@@ -1578,6 +1701,7 @@ fn cmd_quality_score(
 }
 
 /// List available quality profiles
+#[allow(clippy::unnecessary_wraps)]
 fn cmd_quality_profiles() -> crate::Result<()> {
     use crate::quality::QualityProfile;
 

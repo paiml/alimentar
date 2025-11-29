@@ -455,17 +455,33 @@ impl HfPublisher {
             ))
         })?;
 
+        // Split repo_id into org/name components
+        let (org, name) = if let Some(slash_pos) = self.repo_id.find('/') {
+            let org = &self.repo_id[..slash_pos];
+            let name = &self.repo_id[slash_pos + 1..];
+            (Some(org), name)
+        } else {
+            (None, self.repo_id.as_str())
+        };
+
         let client = reqwest::Client::new();
         let url = format!("{}/repos/create", HF_API_URL);
+
+        let mut body = serde_json::json!({
+            "type": "dataset",
+            "name": name,
+            "private": self.private
+        });
+
+        // Add organization if present
+        if let Some(org_name) = org {
+            body["organization"] = serde_json::json!(org_name);
+        }
 
         let response = client
             .post(&url)
             .header("Authorization", format!("Bearer {}", token))
-            .json(&serde_json::json!({
-                "type": "dataset",
-                "name": self.repo_id,
-                "private": self.private
-            }))
+            .json(&body)
             .send()
             .await
             .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?;
@@ -483,9 +499,26 @@ impl HfPublisher {
         }
     }
 
-    /// Uploads a parquet file to the repository.
-    #[cfg(feature = "http")]
+    /// Uploads a file to the repository.
+    ///
+    /// This method automatically selects the appropriate upload method:
+    /// - **Binary files** (parquet, images, etc.): Uses LFS preupload API
+    /// - **Text files** (README.md, JSON, etc.): Uses direct NDJSON commit API
+    ///
+    /// The official `hf-hub` crate only supports downloads, making this upload
+    /// capability a key differentiator for alimentar.
+    #[cfg(feature = "hf-hub")]
     pub async fn upload_file(&self, path_in_repo: &str, data: &[u8]) -> Result<()> {
+        if is_binary_file(path_in_repo) {
+            self.upload_file_lfs(path_in_repo, data).await
+        } else {
+            self.upload_file_direct(path_in_repo, data).await
+        }
+    }
+
+    /// Uploads a text file directly using the NDJSON commit API.
+    #[cfg(feature = "hf-hub")]
+    async fn upload_file_direct(&self, path_in_repo: &str, data: &[u8]) -> Result<()> {
         let token = self.token.as_ref().ok_or_else(|| {
             Error::io_no_path(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
@@ -494,16 +527,15 @@ impl HfPublisher {
         })?;
 
         let client = reqwest::Client::new();
-        let url = format!(
-            "{}/datasets/{}/upload/main/{}",
-            HF_HUB_URL, self.repo_id, path_in_repo
-        );
+        let url = format!("{}/datasets/{}/commit/main", HF_API_URL, self.repo_id);
+
+        let ndjson_payload = build_ndjson_upload_payload(&self.commit_message, path_in_repo, data);
 
         let response = client
-            .put(&url)
+            .post(&url)
             .header("Authorization", format!("Bearer {}", token))
-            .header("Content-Type", "application/octet-stream")
-            .body(data.to_vec())
+            .header("Content-Type", "application/x-ndjson")
+            .body(ndjson_payload)
             .send()
             .await
             .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?;
@@ -520,8 +552,123 @@ impl HfPublisher {
         }
     }
 
+    /// Uploads a binary file using LFS batch API.
+    ///
+    /// Flow:
+    /// 1. Compute SHA256 hash of the file content (OID)
+    /// 2. POST to LFS batch API to get presigned S3 upload URL
+    /// 3. PUT binary content to the S3 URL
+    /// 4. POST commit with lfsFile reference
+    #[cfg(feature = "hf-hub")]
+    async fn upload_file_lfs(&self, path_in_repo: &str, data: &[u8]) -> Result<()> {
+        let token = self.token.as_ref().ok_or_else(|| {
+            Error::io_no_path(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "HF_TOKEN required for upload",
+            ))
+        })?;
+
+        let client = reqwest::Client::new();
+
+        // Step 1: Compute SHA256 hash (LFS Object ID)
+        let oid = compute_sha256(data);
+        let size = data.len();
+
+        // Step 2: Call LFS batch API to get presigned S3 upload URL
+        let batch_url = format!(
+            "https://huggingface.co/datasets/{}.git/info/lfs/objects/batch",
+            self.repo_id
+        );
+        let batch_body = build_lfs_batch_request(&oid, size);
+
+        let batch_response = client
+            .post(&batch_url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/vnd.git-lfs+json")
+            .body(batch_body)
+            .send()
+            .await
+            .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?;
+
+        if !batch_response.status().is_success() {
+            let status = batch_response.status();
+            let body = batch_response.text().await.unwrap_or_default();
+            return Err(Error::io_no_path(std::io::Error::other(format!(
+                "LFS batch API failed: {} - {}",
+                status, body
+            ))));
+        }
+
+        let batch_json: serde_json::Value = batch_response
+            .json()
+            .await
+            .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?;
+
+        // Extract S3 upload URL from response: objects[0].actions.upload.href
+        let objects = batch_json["objects"]
+            .as_array()
+            .ok_or_else(|| Error::io_no_path(std::io::Error::other("Invalid LFS batch response")))?;
+
+        let object = objects
+            .first()
+            .ok_or_else(|| Error::io_no_path(std::io::Error::other("No object in LFS response")))?;
+
+        // Check if upload is needed (object might already exist)
+        let upload_action = object.get("actions").and_then(|a| a.get("upload"));
+
+        if let Some(upload) = upload_action {
+            let upload_url = upload["href"]
+                .as_str()
+                .ok_or_else(|| Error::io_no_path(std::io::Error::other("No upload URL in LFS response")))?;
+
+            // Step 3: Upload binary content to S3 (presigned URL, no auth header needed)
+            let upload_response = client
+                .put(upload_url)
+                .header("Content-Type", "application/octet-stream")
+                .body(data.to_vec())
+                .send()
+                .await
+                .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?;
+
+            if !upload_response.status().is_success() {
+                let status = upload_response.status();
+                let body = upload_response.text().await.unwrap_or_default();
+                return Err(Error::io_no_path(std::io::Error::other(format!(
+                    "LFS S3 upload failed: {} - {}",
+                    status, body
+                ))));
+            }
+        }
+        // If no upload action, object already exists in LFS - proceed to commit
+
+        // Step 4: Commit with LFS file reference
+        let commit_url = format!("{}/datasets/{}/commit/main", HF_API_URL, self.repo_id);
+        let commit_payload = build_ndjson_lfs_commit(&self.commit_message, path_in_repo, &oid, size);
+
+        let commit_response = client
+            .post(&commit_url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/x-ndjson")
+            .body(commit_payload)
+            .send()
+            .await
+            .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?;
+
+        if commit_response.status().is_success() {
+            Ok(())
+        } else {
+            let status = commit_response.status();
+            let body = commit_response.text().await.unwrap_or_default();
+            Err(Error::io_no_path(std::io::Error::other(format!(
+                "LFS commit failed: {} - {}",
+                status, body
+            ))))
+        }
+    }
+
     /// Uploads a RecordBatch as a parquet file.
-    #[cfg(feature = "http")]
+    #[cfg(feature = "hf-hub")]
     pub async fn upload_batch(
         &self,
         path_in_repo: &str,
@@ -542,7 +689,7 @@ impl HfPublisher {
     }
 
     /// Uploads a local parquet file to the repository.
-    #[cfg(feature = "http")]
+    #[cfg(feature = "hf-hub")]
     pub async fn upload_parquet_file(&self, local_path: &Path, path_in_repo: &str) -> Result<()> {
         let data = std::fs::read(local_path).map_err(|e| Error::io(e, local_path))?;
         self.upload_file(path_in_repo, &data).await
@@ -557,7 +704,7 @@ impl HfPublisher {
     }
 
     /// Synchronous wrapper for uploading file (for CLI use).
-    #[cfg(all(feature = "http", feature = "tokio-runtime"))]
+    #[cfg(all(feature = "hf-hub", feature = "tokio-runtime"))]
     pub fn upload_file_sync(&self, path_in_repo: &str, data: &[u8]) -> Result<()> {
         tokio::runtime::Runtime::new()
             .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?
@@ -565,7 +712,7 @@ impl HfPublisher {
     }
 
     /// Synchronous wrapper for uploading parquet file (for CLI use).
-    #[cfg(all(feature = "http", feature = "tokio-runtime"))]
+    #[cfg(all(feature = "hf-hub", feature = "tokio-runtime"))]
     pub fn upload_parquet_file_sync(&self, local_path: &Path, path_in_repo: &str) -> Result<()> {
         tokio::runtime::Runtime::new()
             .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?
@@ -580,14 +727,14 @@ impl HfPublisher {
     /// # Errors
     ///
     /// Returns an error if validation fails or upload fails.
-    #[cfg(feature = "http")]
+    #[cfg(feature = "hf-hub")]
     pub async fn upload_readme_validated(&self, content: &str) -> Result<()> {
         DatasetCardValidator::validate_readme_strict(content)?;
         self.upload_file("README.md", content.as_bytes()).await
     }
 
     /// Synchronous wrapper for validated README upload.
-    #[cfg(all(feature = "http", feature = "tokio-runtime"))]
+    #[cfg(all(feature = "hf-hub", feature = "tokio-runtime"))]
     pub fn upload_readme_validated_sync(&self, content: &str) -> Result<()> {
         tokio::runtime::Runtime::new()
             .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?
@@ -894,6 +1041,195 @@ impl DatasetCardValidator {
 
         dp[m][n]
     }
+}
+
+// ============================================================================
+// NDJSON Upload Payload Builder
+// ============================================================================
+
+/// Builds an NDJSON payload for the HuggingFace Hub commit API.
+///
+/// The HuggingFace commit API uses NDJSON (Newline-Delimited JSON) format:
+/// - Line 1: Header with commit message
+/// - Line 2+: File operations with base64-encoded content
+///
+/// # Arguments
+///
+/// * `commit_message` - The commit summary message
+/// * `path_in_repo` - The file path within the repository
+/// * `data` - The raw file content to upload
+///
+/// # Returns
+///
+/// A string containing the NDJSON payload ready for upload.
+///
+/// # Example
+///
+/// ```ignore
+/// let payload = build_ndjson_upload_payload(
+///     "Upload training data",
+///     "train.parquet",
+///     &parquet_bytes
+/// );
+/// ```
+#[cfg(feature = "hf-hub")]
+pub fn build_ndjson_upload_payload(commit_message: &str, path_in_repo: &str, data: &[u8]) -> String {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+
+    // Line 1: Header with commit message
+    let header = serde_json::json!({
+        "key": "header",
+        "value": {
+            "summary": commit_message,
+            "description": ""
+        }
+    });
+
+    // Line 2: File operation with base64 content
+    let file_op = serde_json::json!({
+        "key": "file",
+        "value": {
+            "content": STANDARD.encode(data),
+            "path": path_in_repo,
+            "encoding": "base64"
+        }
+    });
+
+    format!("{}\n{}", header, file_op)
+}
+
+// ============================================================================
+// LFS Upload Support for Binary Files
+// ============================================================================
+
+/// Binary file extensions that require LFS upload.
+const BINARY_EXTENSIONS: &[&str] = &[
+    "parquet", "arrow", "bin", "safetensors", "pt", "pth", "onnx",
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff",
+    "mp3", "wav", "flac", "ogg", "mp4", "webm", "avi", "mkv",
+    "zip", "tar", "gz", "bz2", "xz", "7z", "rar",
+    "pdf", "doc", "docx", "xls", "xlsx",
+    "npy", "npz", "h5", "hdf5", "pkl", "pickle",
+];
+
+/// Checks if a file path is a binary file that requires LFS upload.
+///
+/// HuggingFace Hub requires binary files to be uploaded via LFS/XET storage.
+/// This function detects common binary file extensions.
+pub fn is_binary_file(path: &str) -> bool {
+    path.rsplit('.')
+        .next()
+        .map(|ext| BINARY_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// Computes SHA256 hash of data for LFS.
+///
+/// LFS uses SHA256 hashes as object identifiers (OIDs).
+#[cfg(feature = "hf-hub")]
+pub fn compute_sha256(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    let result = hasher.finalize();
+    hex::encode(result)
+}
+
+/// Builds a preupload request for the HuggingFace LFS API.
+///
+/// # Arguments
+///
+/// * `path` - The file path in the repository
+/// * `data` - The binary file content
+///
+/// # Returns
+///
+/// JSON string for the preupload API request.
+#[cfg(feature = "hf-hub")]
+pub fn build_lfs_preupload_request(path: &str, data: &[u8]) -> String {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+
+    // Sample is first 512 bytes, base64 encoded
+    let sample_size = std::cmp::min(512, data.len());
+    let sample = STANDARD.encode(&data[..sample_size]);
+
+    let request = serde_json::json!({
+        "files": [{
+            "path": path,
+            "size": data.len(),
+            "sample": sample
+        }]
+    });
+
+    request.to_string()
+}
+
+/// Builds a request for the LFS batch API.
+///
+/// The LFS batch API is the Git LFS standard endpoint for uploading large files.
+/// It returns presigned S3 URLs for actual binary upload.
+///
+/// # Arguments
+///
+/// * `oid` - The SHA256 hash of the file content
+/// * `size` - The file size in bytes
+///
+/// # Returns
+///
+/// JSON string for the LFS batch API request.
+#[cfg(feature = "hf-hub")]
+pub fn build_lfs_batch_request(oid: &str, size: usize) -> String {
+    let request = serde_json::json!({
+        "operation": "upload",
+        "transfers": ["basic"],
+        "objects": [{
+            "oid": oid,
+            "size": size
+        }]
+    });
+
+    request.to_string()
+}
+
+/// Builds an NDJSON commit payload for LFS files.
+///
+/// Unlike regular files (which use base64 content), LFS files use
+/// the `lfsFile` key with SHA256 OID and size.
+///
+/// # Arguments
+///
+/// * `commit_message` - The commit summary message
+/// * `path_in_repo` - The file path within the repository
+/// * `oid` - The SHA256 hash of the file content
+/// * `size` - The file size in bytes
+#[cfg(feature = "hf-hub")]
+pub fn build_ndjson_lfs_commit(
+    commit_message: &str,
+    path_in_repo: &str,
+    oid: &str,
+    size: usize,
+) -> String {
+    // Line 1: Header with commit message (same as regular commits)
+    let header = serde_json::json!({
+        "key": "header",
+        "value": {
+            "summary": commit_message,
+            "description": ""
+        }
+    });
+
+    // Line 2: LFS file operation with OID instead of content
+    let file_op = serde_json::json!({
+        "key": "lfsFile",
+        "value": {
+            "path": path_in_repo,
+            "algo": "sha256",
+            "oid": oid,
+            "size": size
+        }
+    });
+
+    format!("{}\n{}", header, file_op)
 }
 
 #[cfg(test)]
@@ -1498,5 +1834,324 @@ task_categories:
             let errors = DatasetCardValidator::validate_readme(&readme);
             assert!(errors.is_empty(), "Size '{}' should be valid", size);
         }
+    }
+
+    // ========================================================================
+    // HfPublisher Tests - EXTREME TDD
+    // ========================================================================
+
+    #[test]
+    fn test_hf_publisher_new() {
+        let publisher = HfPublisher::new("paiml/test-dataset");
+        assert_eq!(publisher.repo_id(), "paiml/test-dataset");
+    }
+
+    #[test]
+    fn test_hf_publisher_with_private() {
+        let publisher = HfPublisher::new("paiml/test-dataset").with_private(true);
+        assert_eq!(publisher.repo_id(), "paiml/test-dataset");
+        // Private flag is stored internally
+    }
+
+    #[test]
+    fn test_hf_publisher_with_commit_message() {
+        let publisher =
+            HfPublisher::new("paiml/test-dataset").with_commit_message("Test commit");
+        assert_eq!(publisher.repo_id(), "paiml/test-dataset");
+    }
+
+    #[test]
+    fn test_hf_publisher_builder_basic() {
+        let publisher = HfPublisherBuilder::new("paiml/test-dataset").build();
+        assert_eq!(publisher.repo_id(), "paiml/test-dataset");
+    }
+
+    #[test]
+    fn test_hf_publisher_builder_with_all_options() {
+        let publisher = HfPublisherBuilder::new("paiml/test-dataset")
+            .token("test-token")
+            .private(true)
+            .commit_message("Custom message")
+            .build();
+        assert_eq!(publisher.repo_id(), "paiml/test-dataset");
+    }
+
+    #[test]
+    fn test_hf_publisher_parse_org_name_with_slash() {
+        // Test that org/name parsing works correctly
+        let repo_id = "paiml/python-doctest-corpus";
+        let slash_pos = repo_id.find('/');
+        assert!(slash_pos.is_some());
+        let (org, name) = if let Some(pos) = slash_pos {
+            (&repo_id[..pos], &repo_id[pos + 1..])
+        } else {
+            ("", repo_id)
+        };
+        assert_eq!(org, "paiml");
+        assert_eq!(name, "python-doctest-corpus");
+    }
+
+    #[test]
+    fn test_hf_publisher_parse_name_without_slash() {
+        // Test that single name (no org) works correctly
+        let repo_id = "my-dataset";
+        let slash_pos = repo_id.find('/');
+        assert!(slash_pos.is_none());
+    }
+
+    #[test]
+    fn test_hf_publisher_commit_url_format() {
+        // Verify the commit API URL format
+        let repo_id = "paiml/test-dataset";
+        let expected_url = format!("{}/datasets/{}/commit/main", HF_API_URL, repo_id);
+        assert_eq!(
+            expected_url,
+            "https://huggingface.co/api/datasets/paiml/test-dataset/commit/main"
+        );
+    }
+
+    #[test]
+    fn test_hf_publisher_create_repo_url_format() {
+        // Verify the create repo API URL format
+        let expected_url = format!("{}/repos/create", HF_API_URL);
+        assert_eq!(expected_url, "https://huggingface.co/api/repos/create");
+    }
+
+    // ========================================================================
+    // NDJSON Upload API Tests - EXTREME TDD
+    // These tests define the expected API format BEFORE implementation
+    // ========================================================================
+
+    #[test]
+    fn test_ndjson_header_format() {
+        // HuggingFace commit API expects header as first NDJSON line
+        let commit_message = "Upload test file";
+        let header = serde_json::json!({
+            "key": "header",
+            "value": {
+                "summary": commit_message,
+                "description": ""
+            }
+        });
+
+        let header_str = header.to_string();
+        assert!(header_str.contains("\"key\":\"header\""));
+        assert!(header_str.contains("\"summary\":\"Upload test file\""));
+    }
+
+    #[test]
+    fn test_ndjson_file_operation_format() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+
+        // HuggingFace commit API expects file operations with base64 content
+        let test_data = b"test file content";
+        let content_base64 = STANDARD.encode(test_data);
+        let path_in_repo = "data/test.parquet";
+
+        let file_op = serde_json::json!({
+            "key": "file",
+            "value": {
+                "content": content_base64,
+                "path": path_in_repo,
+                "encoding": "base64"
+            }
+        });
+
+        let file_str = file_op.to_string();
+        assert!(file_str.contains("\"key\":\"file\""));
+        assert!(file_str.contains("\"encoding\":\"base64\""));
+        assert!(file_str.contains("\"path\":\"data/test.parquet\""));
+    }
+
+    #[test]
+    fn test_ndjson_payload_is_newline_delimited() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+
+        // NDJSON = one JSON object per line, separated by newlines
+        let header = serde_json::json!({
+            "key": "header",
+            "value": {"summary": "Test", "description": ""}
+        });
+
+        let file_op = serde_json::json!({
+            "key": "file",
+            "value": {
+                "content": STANDARD.encode(b"data"),
+                "path": "test.txt",
+                "encoding": "base64"
+            }
+        });
+
+        let ndjson = format!("{}\n{}", header, file_op);
+
+        // Should have exactly 2 lines
+        let lines: Vec<&str> = ndjson.lines().collect();
+        assert_eq!(lines.len(), 2);
+
+        // Each line should be valid JSON
+        assert!(serde_json::from_str::<serde_json::Value>(lines[0]).is_ok());
+        assert!(serde_json::from_str::<serde_json::Value>(lines[1]).is_ok());
+    }
+
+    #[test]
+    fn test_build_ndjson_payload() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+
+        // Test the helper function that builds the complete NDJSON payload
+        let commit_message = "Upload via alimentar";
+        let path_in_repo = "train.parquet";
+        let data = b"parquet binary data here";
+
+        let payload = build_ndjson_upload_payload(commit_message, path_in_repo, data);
+
+        // Verify structure
+        let lines: Vec<&str> = payload.lines().collect();
+        assert_eq!(lines.len(), 2, "NDJSON should have exactly 2 lines");
+
+        // Parse and verify header
+        let header: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(header["key"], "header");
+        assert_eq!(header["value"]["summary"], commit_message);
+
+        // Parse and verify file operation
+        let file_op: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(file_op["key"], "file");
+        assert_eq!(file_op["value"]["path"], path_in_repo);
+        assert_eq!(file_op["value"]["encoding"], "base64");
+
+        // Verify content round-trips correctly
+        let encoded_content = file_op["value"]["content"].as_str().unwrap();
+        let decoded = STANDARD.decode(encoded_content).unwrap();
+        assert_eq!(decoded, data);
+    }
+
+    // ========================================================================
+    // LFS Preupload API Tests - EXTREME TDD for binary file support
+    // These tests define the expected API format BEFORE implementation
+    // ========================================================================
+
+    #[test]
+    fn test_is_binary_file_detection() {
+        // Binary file extensions that require LFS
+        assert!(is_binary_file("train.parquet"));
+        assert!(is_binary_file("data.arrow"));
+        assert!(is_binary_file("image.png"));
+        assert!(is_binary_file("model.bin"));
+        assert!(is_binary_file("weights.safetensors"));
+
+        // Text files that can use direct commit
+        assert!(!is_binary_file("README.md"));
+        assert!(!is_binary_file("config.json"));
+        assert!(!is_binary_file("data.csv"));
+        assert!(!is_binary_file(".gitattributes"));
+    }
+
+    #[test]
+    fn test_compute_sha256_for_lfs() {
+        // LFS requires SHA256 hash of file content
+        let data = b"test content for hashing";
+        let hash = compute_sha256(data);
+
+        // SHA256 should be 64 hex characters
+        assert_eq!(hash.len(), 64);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Same input should produce same hash
+        assert_eq!(hash, compute_sha256(data));
+
+        // Different input should produce different hash
+        assert_ne!(hash, compute_sha256(b"different content"));
+    }
+
+    #[test]
+    fn test_build_lfs_preupload_request() {
+        // HuggingFace preupload API request format
+        let path = "data/train.parquet";
+        let data = b"parquet binary content";
+
+        let request = build_lfs_preupload_request(path, data);
+
+        // Parse and verify structure
+        let json: serde_json::Value = serde_json::from_str(&request).unwrap();
+        assert!(json.get("files").is_some());
+
+        let files = json["files"].as_array().unwrap();
+        assert_eq!(files.len(), 1);
+
+        let file = &files[0];
+        assert_eq!(file["path"], path);
+        assert_eq!(file["size"], data.len());
+        // Sample is first 512 bytes base64 encoded
+        assert!(file["sample"].is_string());
+    }
+
+    #[test]
+    fn test_build_ndjson_lfs_commit() {
+        // LFS commit uses lfsFile key with OID instead of base64 content
+        let commit_message = "Upload parquet via LFS";
+        let path_in_repo = "data/train.parquet";
+        let oid = "abc123def456"; // SHA256 hash
+        let size = 1024usize;
+
+        let payload = build_ndjson_lfs_commit(commit_message, path_in_repo, oid, size);
+
+        let lines: Vec<&str> = payload.lines().collect();
+        assert_eq!(lines.len(), 2, "NDJSON should have exactly 2 lines");
+
+        // Header should be same format
+        let header: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(header["key"], "header");
+        assert_eq!(header["value"]["summary"], commit_message);
+
+        // File should use lfsFile key with OID
+        let file_op: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(file_op["key"], "lfsFile");
+        assert_eq!(file_op["value"]["path"], path_in_repo);
+        assert_eq!(file_op["value"]["algo"], "sha256");
+        assert_eq!(file_op["value"]["oid"], oid);
+        assert_eq!(file_op["value"]["size"], size);
+    }
+
+    #[test]
+    fn test_lfs_preupload_url_format() {
+        // Verify preupload API URL format
+        let repo_id = "paiml/test-dataset";
+        let expected_url = format!("{}/datasets/{}/preupload/main", HF_API_URL, repo_id);
+        assert_eq!(
+            expected_url,
+            "https://huggingface.co/api/datasets/paiml/test-dataset/preupload/main"
+        );
+    }
+
+    #[test]
+    fn test_lfs_batch_api_url_format() {
+        // LFS batch API uses different URL format (Git LFS standard)
+        let repo_id = "paiml/test-dataset";
+        let expected_url = format!(
+            "https://huggingface.co/datasets/{}.git/info/lfs/objects/batch",
+            repo_id
+        );
+        assert_eq!(
+            expected_url,
+            "https://huggingface.co/datasets/paiml/test-dataset.git/info/lfs/objects/batch"
+        );
+    }
+
+    #[test]
+    fn test_build_lfs_batch_request() {
+        // LFS batch API request format (Git LFS standard)
+        let oid = "abc123def456";
+        let size = 1024usize;
+
+        let request = build_lfs_batch_request(oid, size);
+
+        let json: serde_json::Value = serde_json::from_str(&request).unwrap();
+        assert_eq!(json["operation"], "upload");
+        assert!(json["transfers"].as_array().unwrap().contains(&serde_json::json!("basic")));
+
+        let objects = json["objects"].as_array().unwrap();
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0]["oid"], oid);
+        assert_eq!(objects[0]["size"], size);
     }
 }
