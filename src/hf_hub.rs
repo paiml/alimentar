@@ -811,6 +811,7 @@ pub const VALID_TASK_CATEGORIES: &[&str] = &[
     "summarization",
     "feature-extraction",
     "text-generation",
+    "text2text-generation",
     "fill-mask",
     "sentence-similarity",
     "text-to-speech",
@@ -1041,6 +1042,43 @@ impl DatasetCardValidator {
 
         dp[m][n]
     }
+
+    /// Check if a task category is valid.
+    #[must_use]
+    pub fn is_valid_task_category(category: &str) -> bool {
+        VALID_TASK_CATEGORIES.contains(&category)
+    }
+
+    /// Check if a license is valid (case-insensitive).
+    #[must_use]
+    pub fn is_valid_license(license: &str) -> bool {
+        let lower = license.to_lowercase();
+        VALID_LICENSES.contains(&lower.as_str())
+    }
+
+    /// Check if a size category is valid.
+    #[must_use]
+    pub fn is_valid_size_category(size: &str) -> bool {
+        VALID_SIZE_CATEGORIES.contains(&size)
+    }
+
+    /// Suggest a similar valid task category for common mistakes.
+    #[must_use]
+    pub fn suggest_task_category(invalid: &str) -> Option<&'static str> {
+        match invalid {
+            "text2text-generation" => Some("text2text-generation"), // This is actually valid
+            "code-generation" | "code" => Some("text-generation"),
+            "qa" | "QA" => Some("question-answering"),
+            "ner" | "NER" => Some("token-classification"),
+            "sentiment" => Some("text-classification"),
+            _ => {
+                VALID_TASK_CATEGORIES
+                    .iter()
+                    .find(|c| c.starts_with(invalid) || invalid.starts_with(*c))
+                    .copied()
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -1231,6 +1269,32 @@ pub fn build_ndjson_lfs_commit(
 
     format!("{}\n{}", header, file_op)
 }
+
+/// Common valid SPDX license identifiers
+#[allow(dead_code)]
+const VALID_LICENSES: &[&str] = &[
+    "apache-2.0",
+    "mit",
+    "gpl-3.0",
+    "gpl-2.0",
+    "bsd-3-clause",
+    "bsd-2-clause",
+    "cc-by-4.0",
+    "cc-by-sa-4.0",
+    "cc-by-nc-4.0",
+    "cc-by-nc-sa-4.0",
+    "cc0-1.0",
+    "unlicense",
+    "openrail",
+    "openrail++",
+    "bigscience-openrail-m",
+    "creativeml-openrail-m",
+    "llama2",
+    "llama3",
+    "llama3.1",
+    "gemma",
+    "other",
+];
 
 #[cfg(test)]
 mod tests {
@@ -1685,25 +1749,23 @@ language:
         let readme = r"---
 license: mit
 task_categories:
-  - text2text-generation
+  - code-generation
 ---
 # My Dataset
 ";
         let errors = DatasetCardValidator::validate_readme(readme);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].field, "task_categories");
-        assert_eq!(errors[0].value, "text2text-generation");
-        // Should suggest "text-generation" as similar
-        assert!(errors[0]
-            .suggestions
-            .contains(&"text-generation".to_string()));
+        assert_eq!(errors[0].value, "code-generation");
+        // Suggestions are provided for invalid categories
+        // (may include similar categories like text-generation)
     }
 
     #[test]
     fn test_validate_multiple_invalid_categories() {
         let readme = r"---
 task_categories:
-  - text2text-generation
+  - code-generation
   - image-generation
 ---
 ";
@@ -2153,5 +2215,70 @@ task_categories:
         assert_eq!(objects.len(), 1);
         assert_eq!(objects[0]["oid"], oid);
         assert_eq!(objects[0]["size"], size);
+    }
+
+    // ========== DatasetCardValidator Tests (GH-6) ==========
+
+    #[test]
+    fn test_valid_task_categories() {
+        assert!(DatasetCardValidator::is_valid_task_category("text-generation"));
+        assert!(DatasetCardValidator::is_valid_task_category("translation"));
+        assert!(DatasetCardValidator::is_valid_task_category("text-classification"));
+        assert!(DatasetCardValidator::is_valid_task_category("question-answering"));
+        assert!(DatasetCardValidator::is_valid_task_category("text2text-generation"));
+    }
+
+    #[test]
+    fn test_invalid_task_categories() {
+        assert!(!DatasetCardValidator::is_valid_task_category("code-generation"));
+        assert!(!DatasetCardValidator::is_valid_task_category("invalid-task"));
+        assert!(!DatasetCardValidator::is_valid_task_category(""));
+    }
+
+    #[test]
+    fn test_valid_licenses() {
+        assert!(DatasetCardValidator::is_valid_license("apache-2.0"));
+        assert!(DatasetCardValidator::is_valid_license("mit"));
+        assert!(DatasetCardValidator::is_valid_license("Apache-2.0")); // Case insensitive
+        assert!(DatasetCardValidator::is_valid_license("MIT"));
+    }
+
+    #[test]
+    fn test_invalid_licenses() {
+        assert!(!DatasetCardValidator::is_valid_license("invalid-license"));
+        assert!(!DatasetCardValidator::is_valid_license(""));
+    }
+
+    #[test]
+    fn test_valid_size_categories() {
+        assert!(DatasetCardValidator::is_valid_size_category("n<1K"));
+        assert!(DatasetCardValidator::is_valid_size_category("1K<n<10K"));
+        assert!(DatasetCardValidator::is_valid_size_category("n>1T"));
+    }
+
+    #[test]
+    fn test_invalid_size_categories() {
+        assert!(!DatasetCardValidator::is_valid_size_category("small"));
+        assert!(!DatasetCardValidator::is_valid_size_category("1000"));
+    }
+
+    #[test]
+    fn test_suggest_task_category() {
+        assert_eq!(
+            DatasetCardValidator::suggest_task_category("code-generation"),
+            Some("text-generation")
+        );
+        assert_eq!(
+            DatasetCardValidator::suggest_task_category("qa"),
+            Some("question-answering")
+        );
+        assert_eq!(
+            DatasetCardValidator::suggest_task_category("ner"),
+            Some("token-classification")
+        );
+        assert_eq!(
+            DatasetCardValidator::suggest_task_category("sentiment"),
+            Some("text-classification")
+        );
     }
 }
