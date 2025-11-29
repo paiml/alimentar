@@ -173,6 +173,11 @@ impl DocTestParser {
                         break;
                     }
 
+                    // Poka-Yoke (ALIM-R001): Stop at prose continuation to prevent contamination
+                    if is_prose_continuation(trimmed) {
+                        break;
+                    }
+
                     // Empty line might end the expected output, but tracebacks can have blank lines
                     if trimmed.is_empty() && !expected_lines.is_empty() {
                         // Peek ahead - if next non-empty line is >>> or end, we're done
@@ -271,9 +276,181 @@ fn path_to_module(base: &Path, path: &Path) -> String {
         .to_string()
 }
 
+/// Detect if a line is prose continuation (documentation text) rather than code output.
+/// This is a Poka-Yoke to prevent prose contamination in expected output.
+///
+/// # Arguments
+/// * `line` - The line to check
+///
+/// # Returns
+/// `true` if the line appears to be prose/documentation, `false` if it looks like code output
+#[must_use]
+pub fn is_prose_continuation(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // Python exception lines: ErrorName: message (valid output, not prose)
+    // e.g., "ZeroDivisionError: division by zero", "UserWarning: deprecation"
+    // Must be PascalCase (not just "Warning" which is a prose indicator)
+    let first_word: &str = trimmed.split(|c: char| c == ':' || c.is_whitespace())
+        .next()
+        .unwrap_or("");
+    let is_python_exception = (first_word.ends_with("Error")
+        || first_word.ends_with("Exception")
+        || first_word.ends_with("Warning"))
+        && first_word.len() > 7  // Longer than just "Warning" or "Error"
+        && first_word.chars().filter(|c| c.is_uppercase()).count() >= 2;
+    if is_python_exception {
+        return false;
+    }
+
+    // 1. Sentence pattern: Capital letter followed by lowercase (prose indicator)
+    let chars: Vec<char> = trimmed.chars().collect();
+    if chars.len() >= 2 && chars[0].is_uppercase() && chars[1].is_lowercase() {
+        // Python literals and error keywords that start with capital
+        if ["True", "False", "None", "Traceback"].contains(&first_word) {
+            return false;
+        }
+        // Single capitalized word might be a class name in output
+        if first_word.chars().all(|c| c.is_alphanumeric() || c == '_')
+           && trimmed.split_whitespace().count() == 1 {
+            return false;
+        }
+        // Multi-word sentence starting with capital = prose
+        // But only if it doesn't look like Python output
+        if trimmed.split_whitespace().count() > 2 {
+            // Check if it looks like code output (contains Python-like tokens)
+            // Note: "..." at end of sentence is ellipsis (prose), not continuation marker
+            if trimmed.contains(">>>") || trimmed.starts_with("...")
+               || trimmed.starts_with('<') || trimmed.starts_with('[')
+               || trimmed.starts_with('{') || trimmed.starts_with('(') {
+                return false;
+            }
+            return true;
+        }
+    }
+
+    // 2. Docstring markers (explicit signals)
+    let docstring_markers = [":param", ":return", ":raises", ":type", ":rtype",
+                            ":arg", ":args:", ":keyword", ":ivar", ":cvar"];
+    if docstring_markers.iter().any(|m| trimmed.starts_with(m)) {
+        return true;
+    }
+
+    // 3. Common prose starters (must not contain code-like content)
+    let prose_starters = [
+        "The ", "This ", "Note:", "Warning:", "Example:", "Examples:",
+        "See ", "If ", "When ", "For ", "An ", "A ", "It ",
+        "Returns ", "Raises ", "Args:", "Arguments:", "Parameters:",
+        "By ", "Use ", "Set ", "Get ", "You ", "We ", "They ",
+    ];
+    if prose_starters.iter().any(|s| trimmed.starts_with(s)) {
+        // Don't filter if it contains code-like content (e.g., "Type >>> to continue")
+        if trimmed.contains(">>>") || trimmed.contains("...") {
+            return false;
+        }
+        return true;
+    }
+
+    // 4. Sphinx/reStructuredText markers
+    if trimmed.starts_with(".. ") || trimmed.starts_with(">>>") {
+        return false; // These are code-related
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ========== ALIM-R001: Prose Detection Tests (Poka-Yoke) ==========
+
+    #[test]
+    fn test_prose_detection_sentence() {
+        // Prose sentences should be detected
+        assert!(is_prose_continuation("The stdout argument is not allowed."));
+        assert!(is_prose_continuation("This function returns a value."));
+        assert!(is_prose_continuation("Note: This is important."));
+        assert!(is_prose_continuation("Warning: Use with caution."));
+    }
+
+    #[test]
+    fn test_prose_detection_docstring_markers() {
+        // Docstring markers should be detected as prose
+        assert!(is_prose_continuation(":param x: the input value"));
+        assert!(is_prose_continuation(":return: the computed result"));
+        assert!(is_prose_continuation(":raises ValueError: if invalid"));
+        assert!(is_prose_continuation(":type x: int"));
+    }
+
+    #[test]
+    fn test_prose_detection_common_starters() {
+        // Common documentation starters
+        assert!(is_prose_continuation("If you use this argument..."));
+        assert!(is_prose_continuation("When the value is negative..."));
+        assert!(is_prose_continuation("For more information..."));
+        assert!(is_prose_continuation("Returns the computed value."));
+    }
+
+    #[test]
+    fn test_prose_detection_false_negatives() {
+        // Code output should NOT be detected as prose
+        assert!(!is_prose_continuation("True"));
+        assert!(!is_prose_continuation("False"));
+        assert!(!is_prose_continuation("None"));
+        assert!(!is_prose_continuation("123"));
+        assert!(!is_prose_continuation("'hello world'"));
+        assert!(!is_prose_continuation("b'bytes'"));
+        assert!(!is_prose_continuation("[1, 2, 3]"));
+        assert!(!is_prose_continuation("{'key': 'value'}"));
+        assert!(!is_prose_continuation("(0, '/bin/ls')"));
+        assert!(!is_prose_continuation("Point(x=11, y=22)"));
+        assert!(!is_prose_continuation(""));
+    }
+
+    #[test]
+    fn test_prose_detection_edge_cases() {
+        // Class names (single capitalized word)
+        assert!(!is_prose_continuation("ValueError"));
+        assert!(!is_prose_continuation("MyClass"));
+        // Traceback lines
+        assert!(!is_prose_continuation("Traceback (most recent call last):"));
+        // Empty and whitespace
+        assert!(!is_prose_continuation(""));
+        assert!(!is_prose_continuation("   "));
+    }
+
+    #[test]
+    fn test_extract_with_prose_contamination() {
+        // This is the critical test - prose after expected should be excluded
+        let parser = DocTestParser::new();
+        let source = r#"
+def check_output():
+    """
+    >>> check_output(["ls", "-l"])
+    b'output\n'
+
+    The stdout argument is not allowed as it is used internally.
+    To capture standard error, use stderr=STDOUT.
+
+    >>> check_output(["echo", "hi"])
+    b'hi\n'
+    """
+    pass
+"#;
+        let doctests = parser.parse_source(source, "test");
+        assert_eq!(doctests.len(), 2);
+        // First doctest should NOT include the prose
+        assert_eq!(doctests[0].expected, "b'output\\n'");
+        assert!(!doctests[0].expected.contains("stdout argument"));
+        // Second doctest should be clean
+        assert_eq!(doctests[1].expected, "b'hi\\n'");
+    }
+
+    // ========== Original Tests ==========
 
     #[test]
     fn test_path_to_module_simple() {
