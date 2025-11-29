@@ -302,6 +302,9 @@ enum QualityCommands {
     Score {
         /// Path to dataset file
         path: PathBuf,
+        /// Quality profile to use (default, doctest-corpus, ml-training, time-series)
+        #[arg(short, long, default_value = "default")]
+        profile: String,
         /// Show improvement suggestions for failed checks
         #[arg(long)]
         suggest: bool,
@@ -312,6 +315,8 @@ enum QualityCommands {
         #[arg(long)]
         badge: bool,
     },
+    /// List available quality profiles
+    Profiles,
 }
 
 /// Federated split coordination commands
@@ -525,10 +530,12 @@ pub fn run() -> ExitCode {
             QualityCommands::Report { path, output } => cmd_quality_report(&path, output.as_ref()),
             QualityCommands::Score {
                 path,
+                profile,
                 suggest,
                 json,
                 badge,
-            } => cmd_quality_score(&path, suggest, json, badge),
+            } => cmd_quality_score(&path, &profile, suggest, json, badge),
+            QualityCommands::Profiles => cmd_quality_profiles(),
         },
         Commands::Fed(fed_cmd) => match fed_cmd {
             FedCommands::Manifest {
@@ -1460,17 +1467,27 @@ fn cmd_quality_report(path: &PathBuf, output: Option<&PathBuf>) -> crate::Result
 /// weighted scoring per Toyota Way Jidoka principles.
 fn cmd_quality_score(
     path: &PathBuf,
+    profile_name: &str,
     suggest: bool,
     json_output: bool,
     badge_output: bool,
 ) -> crate::Result<()> {
-    use crate::quality::{QualityScore, Severity};
+    use crate::quality::{QualityProfile, QualityScore, Severity};
+
+    // Load the quality profile
+    let profile = QualityProfile::by_name(profile_name).ok_or_else(|| {
+        crate::Error::Format(format!(
+            "Unknown quality profile '{}'. Available: {:?}",
+            profile_name,
+            QualityProfile::available_profiles()
+        ))
+    })?;
 
     let dataset = load_dataset(path)?;
     let report = QualityChecker::new().check(&dataset)?;
 
     // Wire QualityReport to ChecklistItems per the 100-point checklist
-    let checklist = build_checklist_from_report(&report);
+    let checklist = build_checklist_from_report(&report, &profile);
     let score = QualityScore::from_checklist(checklist);
 
     // Output based on flags
@@ -1489,6 +1506,7 @@ fn cmd_quality_score(
 
         println!("═══════════════════════════════════════════════════════════════");
         println!("  Data Quality Score: {} {} ({:.1}%)  ", grade_symbol, score.grade, score.score);
+        println!("  Profile: {}  ", profile.name);
         println!("  Decision: {}  ", score.grade.publication_decision());
         println!("═══════════════════════════════════════════════════════════════");
         println!();
@@ -1559,6 +1577,35 @@ fn cmd_quality_score(
     Ok(())
 }
 
+/// List available quality profiles
+fn cmd_quality_profiles() -> crate::Result<()> {
+    use crate::quality::QualityProfile;
+
+    println!("Available Quality Profiles");
+    println!("══════════════════════════");
+    println!();
+
+    for name in QualityProfile::available_profiles() {
+        if let Some(profile) = QualityProfile::by_name(name) {
+            println!("  {} - {}", profile.name, profile.description);
+            if !profile.expected_constant_columns.is_empty() {
+                let cols: Vec<_> = profile.expected_constant_columns.iter().collect();
+                println!("    Expected constants: {:?}", cols);
+            }
+            if !profile.nullable_columns.is_empty() {
+                let cols: Vec<_> = profile.nullable_columns.iter().collect();
+                println!("    Nullable columns: {:?}", cols);
+            }
+            println!("    Max null ratio: {:.0}%", profile.max_null_ratio * 100.0);
+            println!("    Max duplicate ratio: {:.0}%", profile.max_duplicate_ratio * 100.0);
+            println!();
+        }
+    }
+
+    println!("Usage: alimentar quality score <path> --profile <name>");
+    Ok(())
+}
+
 /// Build checklist items from `QualityReport`
 ///
 /// Maps `QualityReport` findings to the 100-point checklist defined in GH-6.
@@ -1566,6 +1613,7 @@ fn cmd_quality_score(
 #[allow(clippy::too_many_lines)]
 fn build_checklist_from_report(
     report: &crate::quality::QualityReport,
+    profile: &crate::quality::QualityProfile,
 ) -> Vec<crate::quality::ChecklistItem> {
     use crate::quality::{ChecklistItem, ColumnQuality, Severity};
 
@@ -1590,24 +1638,27 @@ fn build_checklist_from_report(
     );
     id += 1;
 
-    // Check 3: No constant columns (would break training)
-    let constant_cols: Vec<String> = report
+    // Check 3: No unexpected constant columns (would break training)
+    // Filter out columns that the profile expects to be constant (e.g., source, version)
+    let unexpected_constant_cols: Vec<String> = report
         .columns
         .iter()
-        .filter(|(_, c): &(&String, &ColumnQuality)| c.is_constant())
+        .filter(|(name, c): &(&String, &ColumnQuality)| {
+            c.is_constant() && !profile.is_expected_constant(name)
+        })
         .map(|(n, _)| n.clone())
         .collect();
-    let no_constant_cols = constant_cols.is_empty();
+    let no_unexpected_constants = unexpected_constant_cols.is_empty();
     items.push(
         ChecklistItem::new(
             id,
-            "No constant columns (zero variance)",
+            "No unexpected constant columns (zero variance)",
             Severity::Critical,
-            no_constant_cols,
+            no_unexpected_constants,
         )
         .with_suggestion(format!(
             "Remove or investigate constant columns: {:?}",
-            constant_cols
+            unexpected_constant_cols
         )),
     );
     id += 1;
@@ -1642,11 +1693,13 @@ fn build_checklist_from_report(
     );
     id += 1;
 
-    // Check 5: No columns with >50% nulls
+    // Check 5: No columns with >50% nulls (except nullable columns per profile)
     let high_null_cols: Vec<String> = report
         .columns
         .iter()
-        .filter(|(_, c): &(&String, &ColumnQuality)| c.null_ratio > 0.5)
+        .filter(|(name, c): &(&String, &ColumnQuality)| {
+            c.null_ratio > 0.5 && !profile.is_nullable(name)
+        })
         .map(|(n, _)| n.clone())
         .collect();
     let no_high_null = high_null_cols.is_empty();
@@ -1692,11 +1745,13 @@ fn build_checklist_from_report(
     );
     id += 1;
 
-    // Check 8: No columns with >10% nulls (stricter)
+    // Check 8: No columns with >10% nulls (stricter, except nullable columns per profile)
     let moderate_null_cols: Vec<String> = report
         .columns
         .iter()
-        .filter(|(_, c): &(&String, &ColumnQuality)| c.null_ratio > 0.1 && c.null_ratio <= 0.5)
+        .filter(|(name, c): &(&String, &ColumnQuality)| {
+            c.null_ratio > 0.1 && c.null_ratio <= 0.5 && !profile.is_nullable(name)
+        })
         .map(|(n, _)| n.clone())
         .collect();
     let low_null_ratio = moderate_null_cols.is_empty();
@@ -4077,7 +4132,7 @@ mod tests {
         let path = temp_dir.path().join("data.parquet");
         create_test_parquet(&path, 100);
 
-        let result = cmd_quality_score(&path, false, false, false);
+        let result = cmd_quality_score(&path, "default", false, false, false);
         assert!(result.is_ok());
     }
 
@@ -4089,7 +4144,7 @@ mod tests {
         let path = temp_dir.path().join("data.parquet");
         create_test_parquet(&path, 100);
 
-        let result = cmd_quality_score(&path, false, true, false);
+        let result = cmd_quality_score(&path, "default", false, true, false);
         assert!(result.is_ok());
     }
 
@@ -4101,7 +4156,7 @@ mod tests {
         let path = temp_dir.path().join("data.parquet");
         create_test_parquet(&path, 100);
 
-        let result = cmd_quality_score(&path, false, false, true);
+        let result = cmd_quality_score(&path, "default", false, false, true);
         assert!(result.is_ok());
     }
 
@@ -4113,7 +4168,25 @@ mod tests {
         let path = temp_dir.path().join("data.parquet");
         create_test_parquet(&path, 100);
 
-        let result = cmd_quality_score(&path, true, false, false);
+        let result = cmd_quality_score(&path, "default", true, false, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_quality_score_with_doctest_profile() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("data.parquet");
+        create_test_parquet(&path, 100);
+
+        let result = cmd_quality_score(&path, "doctest-corpus", false, false, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_quality_profiles() {
+        let result = cmd_quality_profiles();
         assert!(result.is_ok());
     }
 

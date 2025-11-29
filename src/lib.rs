@@ -122,7 +122,7 @@ pub use imbalance::{
 #[cfg(feature = "mmap")]
 pub use mmap::{MmapDataset, MmapDatasetBuilder};
 pub use parallel::{ParallelDataLoader, ParallelDataLoaderBuilder};
-pub use quality::{ColumnQuality, QualityChecker, QualityIssue, QualityReport};
+pub use quality::{ColumnQuality, QualityChecker, QualityIssue, QualityProfile, QualityReport};
 pub use sketch::{
     Centroid, DDSketch, DataSketch, DistributedDriftDetector, SketchDriftResult, SketchType,
     TDigest,
