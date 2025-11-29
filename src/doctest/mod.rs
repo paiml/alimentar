@@ -12,7 +12,7 @@ use arrow::{
     datatypes::{DataType, Field, Schema, SchemaRef},
 };
 use chrono::{DateTime, Utc};
-pub use parser::DocTestParser;
+pub use parser::{is_prose_continuation, DocTestParser};
 use serde::{Deserialize, Serialize};
 
 use crate::{ArrowDataset, Result};
