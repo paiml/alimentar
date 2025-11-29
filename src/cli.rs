@@ -1764,11 +1764,14 @@ fn build_checklist_from_report(
 
     // Check 3: No unexpected constant columns (would break training)
     // Filter out columns that the profile expects to be constant (e.g., source, version)
+    // Also allow nullable columns to be all-null (constant null is OK for optional fields)
     let unexpected_constant_cols: Vec<String> = report
         .columns
         .iter()
         .filter(|(name, c): &(&String, &ColumnQuality)| {
-            c.is_constant() && !profile.is_expected_constant(name)
+            c.is_constant()
+                && !profile.is_expected_constant(name)
+                && !profile.is_nullable(name)
         })
         .map(|(n, _)| n.clone())
         .collect();
