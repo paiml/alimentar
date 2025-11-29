@@ -1,7 +1,9 @@
 #![allow(clippy::unwrap_used)] // Tests can use unwrap() for simplicity
+#![allow(clippy::expect_used)] // Tests can use expect() for simplicity
+#![allow(deprecated)] // assert_cmd::Command::cargo_bin deprecation
 //! CLI REPL Integration Tests (ALIM-REPL-001 through ALIM-REPL-007)
 //!
-//! Test Approach: CLI integration tests with assert_cmd
+//! Test Approach: CLI integration tests with `assert_cmd`
 //! Pattern: Matches bashrs REPL test coverage
 //!
 //! Quality targets:

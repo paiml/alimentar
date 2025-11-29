@@ -421,7 +421,7 @@ mod tests {
             .unwrap();
         for i in 0..label_col.len() {
             let label = label_col.value(i);
-            assert!(label >= 0 && label < 10, "Label {} out of range", label);
+            assert!((0..10).contains(&label), "Label {} out of range", label);
         }
     }
 
@@ -436,7 +436,7 @@ mod tests {
             .unwrap();
         for i in 0..pixel_col.len() {
             let val = pixel_col.value(i);
-            assert!(val >= 0.0 && val <= 1.0, "Pixel value {} out of range", val);
+            assert!((0.0..=1.0).contains(&val), "Pixel value {} out of range", val);
         }
     }
 
@@ -466,7 +466,7 @@ mod tests {
         let (_, labels) = embedded_fashion_mnist_sample();
         let mut counts = [0i32; 10];
         for label in labels {
-            counts[label as usize] += 1;
+            counts[usize::try_from(label).unwrap()] += 1;
         }
         for (class, &count) in counts.iter().enumerate() {
             assert_eq!(count, 10, "Class {} should have 10 samples", class);

@@ -1,11 +1,11 @@
 //! REPL Command Parser Demo
 //!
 //! Demonstrates programmatic parsing of REPL commands.
-//! Run: cargo run --example repl_commands --features repl
+//! Run: cargo run --example `repl_commands` --features repl
 
 #[cfg(feature = "repl")]
 fn main() {
-    use alimentar::repl::{CommandParser, ReplCommand};
+    use alimentar::repl::CommandParser;
 
     println!("=== REPL Command Parser Demo ===\n");
 
@@ -23,8 +23,8 @@ fn main() {
     println!("--- Data Commands ---");
     for cmd in &commands {
         match CommandParser::parse(cmd) {
-            Ok(parsed) => println!("  {:<20} => {:?}", cmd, parsed),
-            Err(e) => println!("  {:<20} => Error: {}", cmd, e),
+            Ok(parsed) => println!("  {cmd:<20} => {parsed:?}"),
+            Err(e) => println!("  {cmd:<20} => Error: {e}"),
         }
     }
 
@@ -38,8 +38,8 @@ fn main() {
     ];
     for cmd in &quality_cmds {
         match CommandParser::parse(cmd) {
-            Ok(parsed) => println!("  {:<30} => {:?}", cmd, parsed),
-            Err(e) => println!("  {:<30} => Error: {}", cmd, e),
+            Ok(parsed) => println!("  {cmd:<30} => {parsed:?}"),
+            Err(e) => println!("  {cmd:<30} => Error: {e}"),
         }
     }
 
@@ -54,8 +54,8 @@ fn main() {
     ];
     for cmd in &export_cmds {
         match CommandParser::parse(cmd) {
-            Ok(parsed) => println!("  {:<25} => {:?}", cmd, parsed),
-            Err(e) => println!("  {:<25} => Error: {}", cmd, e),
+            Ok(parsed) => println!("  {cmd:<25} => {parsed:?}"),
+            Err(e) => println!("  {cmd:<25} => Error: {e}"),
         }
     }
 
@@ -73,8 +73,8 @@ fn main() {
     ];
     for cmd in &session_cmds {
         match CommandParser::parse(cmd) {
-            Ok(parsed) => println!("  {:<20} => {:?}", cmd, parsed),
-            Err(e) => println!("  {:<20} => Error: {}", cmd, e),
+            Ok(parsed) => println!("  {cmd:<20} => {parsed:?}"),
+            Err(e) => println!("  {cmd:<20} => Error: {e}"),
         }
     }
 
@@ -83,8 +83,8 @@ fn main() {
     let error_cmds = ["load", "quality", "drift", "unknown", ""];
     for cmd in &error_cmds {
         match CommandParser::parse(cmd) {
-            Ok(parsed) => println!("  {:<15} => {:?}", cmd, parsed),
-            Err(e) => println!("  {:<15} => Error: {}", cmd, e),
+            Ok(parsed) => println!("  {cmd:<15} => {parsed:?}"),
+            Err(e) => println!("  {cmd:<15} => Error: {e}"),
         }
     }
 

@@ -1,7 +1,7 @@
 //! REPL Display Configuration Demo
 //!
 //! Demonstrates configurable output formatting.
-//! Run: cargo run --example repl_display_config --features repl
+//! Run: cargo run --example `repl_display_config` --features repl
 
 #[cfg(feature = "repl")]
 fn main() {

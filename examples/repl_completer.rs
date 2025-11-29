@@ -1,11 +1,11 @@
 //! REPL Tab Completion Demo
 //!
 //! Demonstrates the schema-aware autocomplete system.
-//! Run: cargo run --example repl_completer --features repl
+//! Run: `cargo run --example repl_completer --features repl`
 
 #[cfg(feature = "repl")]
 fn main() {
-    use alimentar::repl::{ReplSession, SchemaAwareCompleter, CommandParser};
+    use alimentar::repl::{CommandParser, ReplSession, SchemaAwareCompleter};
 
     println!("=== REPL Tab Completion Demo ===\n");
 
@@ -17,7 +17,7 @@ fn main() {
     let prefixes = ["", "q", "he", "qual", "con"];
     for prefix in &prefixes {
         let completions = completer.complete(prefix);
-        println!("  '{:<6}' => {:?}", prefix, completions);
+        println!("  '{prefix:<6}' => {completions:?}");
     }
 
     // Subcommand completions
@@ -25,14 +25,14 @@ fn main() {
     let sub_prefixes = ["quality ", "drift ", "help ", "convert "];
     for prefix in &sub_prefixes {
         let completions = completer.complete(prefix);
-        println!("  '{}' => {:?}", prefix, completions);
+        println!("  '{prefix}' => {completions:?}");
     }
 
     // Available commands list
     println!("\n--- All Available Commands ---");
     let all_commands = CommandParser::command_names();
     for chunk in all_commands.chunks(5) {
-        println!("  {:?}", chunk);
+        println!("  {chunk:?}");
     }
 
     // Subcommand details
@@ -40,7 +40,7 @@ fn main() {
     for cmd in &["quality", "drift", "export"] {
         let subs = CommandParser::subcommands(cmd);
         let flags = CommandParser::flags(cmd, subs.first().copied());
-        println!("  {} => subs: {:?}, flags: {:?}", cmd, subs, flags);
+        println!("  {cmd} => subs: {subs:?}, flags: {flags:?}");
     }
 
     // Flag completions
@@ -53,7 +53,7 @@ fn main() {
     ];
     for (cmd, sub) in &flag_examples {
         let flags = CommandParser::flags(cmd, *sub);
-        println!("  {} {:?} => {:?}", cmd, sub, flags);
+        println!("  {cmd} {sub:?} => {flags:?}");
     }
 
     println!("\n=== Demo Complete ===");

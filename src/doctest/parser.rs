@@ -82,10 +82,10 @@ impl DocTestParser {
                 let is_class = kind == "class";
 
                 // Build full signature for functions (not classes)
-                let signature = if !is_class {
-                    params.map(|p| format!("def {name}{p}"))
-                } else {
+                let signature = if is_class {
                     None
+                } else {
+                    params.map(|p| format!("def {name}{p}"))
                 };
 
                 // Pop contexts with same or greater indent
@@ -122,7 +122,7 @@ impl DocTestParser {
 
             // Extract doctests from this docstring (with signature)
             let doctests =
-                Self::extract_from_docstring_with_sig(content, module, &function_name, signature);
+                Self::extract_from_docstring_with_sig(content, module, &function_name, signature.as_deref());
             results.extend(doctests);
         }
 
@@ -165,7 +165,7 @@ impl DocTestParser {
         content: &str,
         module: &str,
         function: &str,
-        signature: Option<String>,
+        signature: Option<&str>,
     ) -> Vec<DocTest> {
         let mut results = Vec::new();
         let lines: Vec<&str> = content.lines().collect();
@@ -249,8 +249,8 @@ impl DocTestParser {
 
                 // Create DocTest with signature if available
                 let mut doctest = DocTest::new(module, function, input, expected);
-                if let Some(ref sig) = signature {
-                    doctest = doctest.with_signature(sig.clone());
+                if let Some(sig) = signature {
+                    doctest = doctest.with_signature(sig);
                 }
                 results.push(doctest);
             } else {

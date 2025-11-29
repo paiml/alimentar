@@ -1,7 +1,7 @@
 //! CLI Batch Command Demo
 //!
 //! Demonstrates CLI command patterns for scripting and automation.
-//! Run: cargo run --example cli_batch_commands
+//! Run: cargo run --example `cli_batch_commands`
 
 use std::process::Command;
 
@@ -18,7 +18,7 @@ fn main() {
     if let Ok(output) = help_output {
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines().take(20) {
-            println!("  {}", line);
+            println!("  {line}");
         }
     }
 
