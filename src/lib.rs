@@ -66,6 +66,8 @@
 #[cfg(feature = "tokio-runtime")]
 pub mod async_prefetch;
 pub mod backend;
+/// CLI module for command-line interface
+pub mod cli;
 pub mod dataloader;
 pub mod dataset;
 pub mod datasets;
@@ -92,6 +94,8 @@ pub mod weighted;
 
 #[cfg(feature = "doctest")]
 pub mod doctest;
+#[cfg(feature = "repl")]
+pub mod repl;
 
 // Re-exports for convenience
 // Re-export arrow types commonly needed

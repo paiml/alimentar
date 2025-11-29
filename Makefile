@@ -107,7 +107,7 @@ check: fmt-check lint test ## Run basic quality checks
 ## Following: Two-Phase Pattern (run tests separately from report generation)
 ## TARGET: < 5 minutes
 
-COVERAGE_FEATURES := local,tokio-runtime,cli,mmap,http,hf-hub,shuffle,format-encryption,format-signing,format-streaming
+COVERAGE_FEATURES := local,tokio-runtime,cli,mmap,http,hf-hub,shuffle,format-encryption,format-signing,format-streaming,repl
 
 coverage: ## Generate HTML coverage report (target: <5 min)
 	@echo "📊 Running coverage analysis (target: <5 min)..."

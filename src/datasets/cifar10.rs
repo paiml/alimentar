@@ -210,4 +210,127 @@ mod tests {
         assert_eq!(Cifar10Dataset::class_name(9), Some("truck"));
         assert_eq!(Cifar10Dataset::class_name(10), None);
     }
+
+    #[test]
+    fn test_cifar10_class_name_negative() {
+        assert_eq!(Cifar10Dataset::class_name(-1), None);
+        assert_eq!(Cifar10Dataset::class_name(-100), None);
+    }
+
+    #[test]
+    fn test_cifar10_all_class_names() {
+        for (idx, &expected) in CIFAR10_CLASSES.iter().enumerate() {
+            assert_eq!(Cifar10Dataset::class_name(idx as i32), Some(expected));
+        }
+    }
+
+    #[test]
+    fn test_cifar10_num_features() {
+        let dataset = cifar10().unwrap();
+        assert_eq!(dataset.num_features(), 3072);
+    }
+
+    #[test]
+    fn test_cifar10_feature_names() {
+        let dataset = cifar10().unwrap();
+        assert!(dataset.feature_names().is_empty());
+    }
+
+    #[test]
+    fn test_cifar10_target_name() {
+        let dataset = cifar10().unwrap();
+        assert_eq!(dataset.target_name(), "label");
+    }
+
+    #[test]
+    fn test_cifar10_description() {
+        let dataset = cifar10().unwrap();
+        let desc = dataset.description();
+        assert!(desc.contains("CIFAR-10"));
+        assert!(desc.contains("100 samples"));
+    }
+
+    #[test]
+    fn test_cifar10_data_access() {
+        let dataset = cifar10().unwrap();
+        let data = dataset.data();
+        assert_eq!(data.len(), 100);
+    }
+
+    #[test]
+    fn test_cifar10_schema_columns() {
+        let dataset = cifar10().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        assert_eq!(batch.num_columns(), 3073); // 3072 pixels + 1 label
+    }
+
+    #[test]
+    fn test_cifar10_pixel_values_normalized() {
+        let dataset = cifar10().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        let pixel_col = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<Float32Array>()
+            .unwrap();
+        for i in 0..pixel_col.len() {
+            let val = pixel_col.value(i);
+            assert!(val >= 0.0 && val <= 1.0, "Pixel value {} out of range", val);
+        }
+    }
+
+    #[test]
+    fn test_cifar10_labels_in_range() {
+        let dataset = cifar10().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        let label_col = batch
+            .column(3072)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
+        for i in 0..label_col.len() {
+            let label = label_col.value(i);
+            assert!(label >= 0 && label < 10, "Label {} out of range", label);
+        }
+    }
+
+    #[test]
+    fn test_cifar10_clone() {
+        let dataset = cifar10().unwrap();
+        let cloned = dataset.clone();
+        assert_eq!(cloned.len(), dataset.len());
+    }
+
+    #[test]
+    fn test_cifar10_debug() {
+        let dataset = cifar10().unwrap();
+        let debug = format!("{:?}", dataset);
+        assert!(debug.contains("Cifar10Dataset"));
+    }
+
+    #[test]
+    fn test_embedded_cifar10_sample() {
+        let (pixels, labels) = embedded_cifar10_sample();
+        assert_eq!(pixels.len(), 100 * 3072);
+        assert_eq!(labels.len(), 100);
+    }
+
+    #[test]
+    fn test_embedded_cifar10_sample_labels_balanced() {
+        let (_, labels) = embedded_cifar10_sample();
+        let mut counts = [0i32; 10];
+        for label in labels {
+            counts[label as usize] += 1;
+        }
+        for (i, &count) in counts.iter().enumerate() {
+            assert_eq!(count, 10, "Class {} should have 10 samples", i);
+        }
+    }
+
+    #[test]
+    fn test_cifar10_classes_constant() {
+        assert_eq!(CIFAR10_CLASSES.len(), 10);
+        assert_eq!(CIFAR10_CLASSES[0], "airplane");
+        assert_eq!(CIFAR10_CLASSES[9], "truck");
+    }
 }

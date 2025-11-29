@@ -284,6 +284,7 @@ fn draw_nine(img: &mut [f32]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arrow::array::Float32Array;
     use crate::Dataset;
 
     #[test]
@@ -299,5 +300,161 @@ mod tests {
         let split = dataset.split().unwrap();
         assert_eq!(split.train.len(), 80);
         assert_eq!(split.test.len(), 20);
+    }
+
+    #[test]
+    fn test_mnist_num_features() {
+        let dataset = mnist().unwrap();
+        assert_eq!(dataset.num_features(), 784);
+    }
+
+    #[test]
+    fn test_mnist_feature_names() {
+        let dataset = mnist().unwrap();
+        assert!(dataset.feature_names().is_empty());
+    }
+
+    #[test]
+    fn test_mnist_target_name() {
+        let dataset = mnist().unwrap();
+        assert_eq!(dataset.target_name(), "label");
+    }
+
+    #[test]
+    fn test_mnist_description() {
+        let dataset = mnist().unwrap();
+        let desc = dataset.description();
+        assert!(desc.contains("MNIST"));
+        assert!(desc.contains("LeCun"));
+    }
+
+    #[test]
+    fn test_mnist_data_access() {
+        let dataset = mnist().unwrap();
+        let data = dataset.data();
+        assert_eq!(data.len(), 100);
+    }
+
+    #[test]
+    fn test_mnist_schema_columns() {
+        let dataset = mnist().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        assert_eq!(batch.num_columns(), 785); // 784 pixels + 1 label
+    }
+
+    #[test]
+    fn test_mnist_labels_in_range() {
+        let dataset = mnist().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        let label_col = batch
+            .column(784)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
+        for i in 0..label_col.len() {
+            let label = label_col.value(i);
+            assert!(label >= 0 && label < 10, "Label {} out of range", label);
+        }
+    }
+
+    #[test]
+    fn test_mnist_pixel_values_normalized() {
+        let dataset = mnist().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        let pixel_col = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<Float32Array>()
+            .unwrap();
+        for i in 0..pixel_col.len() {
+            let val = pixel_col.value(i);
+            assert!(val >= 0.0 && val <= 1.0, "Pixel value {} out of range", val);
+        }
+    }
+
+    #[test]
+    fn test_mnist_clone() {
+        let dataset = mnist().unwrap();
+        let cloned = dataset.clone();
+        assert_eq!(cloned.len(), dataset.len());
+    }
+
+    #[test]
+    fn test_mnist_debug() {
+        let dataset = mnist().unwrap();
+        let debug = format!("{:?}", dataset);
+        assert!(debug.contains("MnistDataset"));
+    }
+
+    #[test]
+    fn test_embedded_mnist_sample() {
+        let (pixels, labels) = embedded_mnist_sample();
+        assert_eq!(pixels.len(), 100 * 784);
+        assert_eq!(labels.len(), 100);
+    }
+
+    #[test]
+    fn test_embedded_mnist_sample_labels_balanced() {
+        let (_, labels) = embedded_mnist_sample();
+        let mut counts = [0i32; 10];
+        for label in labels {
+            counts[label as usize] += 1;
+        }
+        for (digit, &count) in counts.iter().enumerate() {
+            assert_eq!(count, 10, "Digit {} should have 10 samples", digit);
+        }
+    }
+
+    #[test]
+    fn test_generate_digit_pattern_0() {
+        let pattern = generate_digit_pattern(0);
+        assert_eq!(pattern.len(), 784);
+        // Should have some non-zero pixels (oval)
+        let non_zero: usize = pattern.iter().filter(|&&p| p > 0.0).count();
+        assert!(non_zero > 0, "Digit 0 pattern should have non-zero pixels");
+    }
+
+    #[test]
+    fn test_generate_digit_pattern_1() {
+        let pattern = generate_digit_pattern(1);
+        assert_eq!(pattern.len(), 784);
+        let non_zero: usize = pattern.iter().filter(|&&p| p > 0.0).count();
+        assert!(non_zero > 0, "Digit 1 pattern should have non-zero pixels");
+    }
+
+    #[test]
+    fn test_generate_digit_patterns_all() {
+        for digit in 0..10 {
+            let pattern = generate_digit_pattern(digit);
+            assert_eq!(pattern.len(), 784, "Digit {} pattern wrong size", digit);
+            let non_zero: usize = pattern.iter().filter(|&&p| p > 0.0).count();
+            assert!(non_zero > 0, "Digit {} pattern should have non-zero pixels", digit);
+        }
+    }
+
+    #[test]
+    fn test_generate_digit_pattern_unknown() {
+        let pattern = generate_digit_pattern(99);
+        assert_eq!(pattern.len(), 784);
+        // Unknown digit should be all zeros
+        let non_zero: usize = pattern.iter().filter(|&&p| p > 0.0).count();
+        assert_eq!(non_zero, 0, "Unknown digit should have all zeros");
+    }
+
+    #[test]
+    fn test_set_pixel_in_bounds() {
+        let mut img = vec![0.0f32; 784];
+        set_pixel(&mut img, 14, 14, 1.0);
+        assert_eq!(img[14 * 28 + 14], 1.0);
+    }
+
+    #[test]
+    fn test_set_pixel_out_of_bounds() {
+        let mut img = vec![0.0f32; 784];
+        set_pixel(&mut img, 30, 14, 1.0); // x out of bounds
+        set_pixel(&mut img, 14, 30, 1.0); // y out of bounds
+        // Should not panic, and image should be unchanged
+        let non_zero: usize = img.iter().filter(|&&p| p > 0.0).count();
+        assert_eq!(non_zero, 0);
     }
 }

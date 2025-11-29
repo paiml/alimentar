@@ -316,6 +316,7 @@ fn embedded_cifar100_sample() -> (Vec<f32>, Vec<i32>, Vec<i32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Dataset;
 
     #[test]
     fn test_cifar100_load() {
@@ -356,5 +357,135 @@ mod tests {
         let schema = dataset.data().schema();
         assert!(schema.field_with_name("fine_label").is_ok());
         assert!(schema.field_with_name("coarse_label").is_ok());
+    }
+
+    #[test]
+    fn test_cifar100_coarse_class_name_negative() {
+        assert_eq!(Cifar100Dataset::coarse_class_name(-1), None);
+        assert_eq!(Cifar100Dataset::coarse_class_name(-100), None);
+    }
+
+    #[test]
+    fn test_cifar100_num_features() {
+        let dataset = cifar100().unwrap();
+        assert_eq!(dataset.num_features(), 3072);
+    }
+
+    #[test]
+    fn test_cifar100_feature_names() {
+        let dataset = cifar100().unwrap();
+        assert!(dataset.feature_names().is_empty());
+    }
+
+    #[test]
+    fn test_cifar100_target_name() {
+        let dataset = cifar100().unwrap();
+        assert_eq!(dataset.target_name(), "fine_label");
+    }
+
+    #[test]
+    fn test_cifar100_description() {
+        let dataset = cifar100().unwrap();
+        let desc = dataset.description();
+        assert!(desc.contains("CIFAR-100"));
+        assert!(desc.contains("100 fine classes"));
+    }
+
+    #[test]
+    fn test_cifar100_data_access() {
+        let dataset = cifar100().unwrap();
+        let data = dataset.data();
+        assert_eq!(data.len(), 100);
+    }
+
+    #[test]
+    fn test_cifar100_schema_columns() {
+        let dataset = cifar100().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        assert_eq!(batch.num_columns(), 3074); // 3072 pixels + 2 labels
+    }
+
+    #[test]
+    fn test_cifar100_fine_labels_in_range() {
+        let dataset = cifar100().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        let label_col = batch
+            .column(3072)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
+        for i in 0..label_col.len() {
+            let label = label_col.value(i);
+            assert!(label >= 0 && label < 100, "Fine label {} out of range", label);
+        }
+    }
+
+    #[test]
+    fn test_cifar100_coarse_labels_in_range() {
+        let dataset = cifar100().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        let label_col = batch
+            .column(3073)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
+        for i in 0..label_col.len() {
+            let label = label_col.value(i);
+            assert!(label >= 0 && label < 20, "Coarse label {} out of range", label);
+        }
+    }
+
+    #[test]
+    fn test_cifar100_clone() {
+        let dataset = cifar100().unwrap();
+        let cloned = dataset.clone();
+        assert_eq!(cloned.len(), dataset.len());
+    }
+
+    #[test]
+    fn test_cifar100_debug() {
+        let dataset = cifar100().unwrap();
+        let debug = format!("{:?}", dataset);
+        assert!(debug.contains("Cifar100Dataset"));
+    }
+
+    #[test]
+    fn test_cifar100_fine_classes_constant() {
+        assert_eq!(CIFAR100_FINE_CLASSES.len(), 100);
+        assert_eq!(CIFAR100_FINE_CLASSES[0], "apple");
+        assert_eq!(CIFAR100_FINE_CLASSES[99], "worm");
+    }
+
+    #[test]
+    fn test_cifar100_coarse_classes_constant() {
+        assert_eq!(CIFAR100_COARSE_CLASSES.len(), 20);
+        assert_eq!(CIFAR100_COARSE_CLASSES[0], "aquatic_mammals");
+        assert_eq!(CIFAR100_COARSE_CLASSES[19], "vehicles_2");
+    }
+
+    #[test]
+    fn test_fine_to_coarse_mapping_valid() {
+        for &coarse_idx in &FINE_TO_COARSE {
+            assert!(coarse_idx < 20, "Coarse index {} out of range", coarse_idx);
+        }
+    }
+
+    #[test]
+    fn test_embedded_cifar100_sample() {
+        let (pixels, fine_labels, coarse_labels) = embedded_cifar100_sample();
+        assert_eq!(pixels.len(), 100 * 3072);
+        assert_eq!(fine_labels.len(), 100);
+        assert_eq!(coarse_labels.len(), 100);
+    }
+
+    #[test]
+    fn test_embedded_cifar100_sample_labels_valid() {
+        let (_, fine_labels, coarse_labels) = embedded_cifar100_sample();
+        for (i, &fine) in fine_labels.iter().enumerate() {
+            assert!(fine >= 0 && fine < 100, "Fine label {} at {} out of range", fine, i);
+        }
+        for (i, &coarse) in coarse_labels.iter().enumerate() {
+            assert!(coarse >= 0 && coarse < 20, "Coarse label {} at {} out of range", coarse, i);
+        }
     }
 }

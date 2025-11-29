@@ -1,0 +1,32 @@
+id: REPL-001
+title: "Implement Interactive REPL with Andon-style quality feedback"
+description: |
+  Implement an interactive REPL for alimentar per ALIM-SPEC-006.
+
+  Features:
+  - Stateful session with loaded datasets (ALIM-REPL-001)
+  - <100ms response time for metadata queries (ALIM-REPL-002)
+  - Schema-aware autocomplete with reedline (ALIM-REPL-003)
+  - Contextual help system (ALIM-REPL-004)
+  - Batuta pipeline integration hooks (ALIM-REPL-005)
+  - Reproducible session export (ALIM-REPL-006)
+  - Progressive disclosure commands (ALIM-REPL-007)
+
+  Toyota Way: Genchi Genbutsu (go and see), Jikotei Kanketsu (self-completion)
+spec: docs/specifications/cli-repl-quality.md
+status: completed
+progress: 100
+created: 2025-11-29
+labels:
+  - enhancement
+  - cli
+  - repl
+  - toyota-way
+acceptance_criteria:
+  - ReplSession struct with dataset caching
+  - Command parser matching batch CLI grammar
+  - SchemaAwareCompleter for column autocomplete
+  - Andon-style prompt showing quality grade
+  - history --export for reproducibility
+  - All tests pass with >90% coverage on new code
+  - Clippy clean with -D warnings

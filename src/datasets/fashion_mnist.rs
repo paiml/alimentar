@@ -337,6 +337,8 @@ fn draw_ankle_boot(img: &mut [f32], var: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arrow::array::Float32Array;
+    use crate::Dataset;
 
     #[test]
     fn test_fashion_mnist_load() {
@@ -359,5 +361,167 @@ mod tests {
         assert_eq!(FashionMnistDataset::class_name(9), Some("ankle boot"));
         assert_eq!(FashionMnistDataset::class_name(10), None);
         assert_eq!(FashionMnistDataset::class_name(-1), None);
+    }
+
+    #[test]
+    fn test_fashion_mnist_all_class_names() {
+        for (idx, &expected) in FASHION_MNIST_CLASSES.iter().enumerate() {
+            assert_eq!(FashionMnistDataset::class_name(idx as i32), Some(expected));
+        }
+    }
+
+    #[test]
+    fn test_fashion_mnist_num_features() {
+        let dataset = fashion_mnist().unwrap();
+        assert_eq!(dataset.num_features(), 784);
+    }
+
+    #[test]
+    fn test_fashion_mnist_feature_names() {
+        let dataset = fashion_mnist().unwrap();
+        assert!(dataset.feature_names().is_empty());
+    }
+
+    #[test]
+    fn test_fashion_mnist_target_name() {
+        let dataset = fashion_mnist().unwrap();
+        assert_eq!(dataset.target_name(), "label");
+    }
+
+    #[test]
+    fn test_fashion_mnist_description() {
+        let dataset = fashion_mnist().unwrap();
+        let desc = dataset.description();
+        assert!(desc.contains("Fashion-MNIST"));
+        assert!(desc.contains("Xiao"));
+    }
+
+    #[test]
+    fn test_fashion_mnist_data_access() {
+        let dataset = fashion_mnist().unwrap();
+        let data = dataset.data();
+        assert_eq!(data.len(), 100);
+    }
+
+    #[test]
+    fn test_fashion_mnist_schema_columns() {
+        let dataset = fashion_mnist().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        assert_eq!(batch.num_columns(), 785); // 784 pixels + 1 label
+    }
+
+    #[test]
+    fn test_fashion_mnist_labels_in_range() {
+        let dataset = fashion_mnist().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        let label_col = batch
+            .column(784)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
+        for i in 0..label_col.len() {
+            let label = label_col.value(i);
+            assert!(label >= 0 && label < 10, "Label {} out of range", label);
+        }
+    }
+
+    #[test]
+    fn test_fashion_mnist_pixel_values_normalized() {
+        let dataset = fashion_mnist().unwrap();
+        let batch = dataset.data().get_batch(0).unwrap();
+        let pixel_col = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<Float32Array>()
+            .unwrap();
+        for i in 0..pixel_col.len() {
+            let val = pixel_col.value(i);
+            assert!(val >= 0.0 && val <= 1.0, "Pixel value {} out of range", val);
+        }
+    }
+
+    #[test]
+    fn test_fashion_mnist_clone() {
+        let dataset = fashion_mnist().unwrap();
+        let cloned = dataset.clone();
+        assert_eq!(cloned.len(), dataset.len());
+    }
+
+    #[test]
+    fn test_fashion_mnist_debug() {
+        let dataset = fashion_mnist().unwrap();
+        let debug = format!("{:?}", dataset);
+        assert!(debug.contains("FashionMnistDataset"));
+    }
+
+    #[test]
+    fn test_embedded_fashion_mnist_sample() {
+        let (pixels, labels) = embedded_fashion_mnist_sample();
+        assert_eq!(pixels.len(), 100 * 784);
+        assert_eq!(labels.len(), 100);
+    }
+
+    #[test]
+    fn test_embedded_fashion_mnist_sample_labels_balanced() {
+        let (_, labels) = embedded_fashion_mnist_sample();
+        let mut counts = [0i32; 10];
+        for label in labels {
+            counts[label as usize] += 1;
+        }
+        for (class, &count) in counts.iter().enumerate() {
+            assert_eq!(count, 10, "Class {} should have 10 samples", class);
+        }
+    }
+
+    #[test]
+    fn test_generate_fashion_pattern_all_classes() {
+        for class in 0..10 {
+            let pattern = generate_fashion_pattern(class, 0);
+            assert_eq!(pattern.len(), 784, "Class {} pattern wrong size", class);
+            let non_zero: usize = pattern.iter().filter(|&&p| p > 0.0).count();
+            assert!(non_zero > 0, "Class {} pattern should have non-zero pixels", class);
+        }
+    }
+
+    #[test]
+    fn test_generate_fashion_pattern_with_variation() {
+        let pattern1 = generate_fashion_pattern(0, 0);
+        let pattern2 = generate_fashion_pattern(0, 5);
+        // Patterns should differ due to variation
+        let different = pattern1.iter().zip(pattern2.iter()).any(|(a, b)| (a - b).abs() > 0.001);
+        assert!(different, "Patterns with different variations should differ");
+    }
+
+    #[test]
+    fn test_generate_fashion_pattern_unknown() {
+        let pattern = generate_fashion_pattern(99, 0);
+        assert_eq!(pattern.len(), 784);
+        // Unknown class should be all zeros
+        let non_zero: usize = pattern.iter().filter(|&&p| p > 0.0).count();
+        assert_eq!(non_zero, 0, "Unknown class should have all zeros");
+    }
+
+    #[test]
+    fn test_set_pixel_in_bounds() {
+        let mut img = vec![0.0f32; 784];
+        set_pixel(&mut img, 14, 14, 1.0);
+        assert_eq!(img[14 * 28 + 14], 1.0);
+    }
+
+    #[test]
+    fn test_set_pixel_out_of_bounds() {
+        let mut img = vec![0.0f32; 784];
+        set_pixel(&mut img, 30, 14, 1.0); // x out of bounds
+        set_pixel(&mut img, 14, 30, 1.0); // y out of bounds
+        // Should not panic, and image should be unchanged
+        let non_zero: usize = img.iter().filter(|&&p| p > 0.0).count();
+        assert_eq!(non_zero, 0);
+    }
+
+    #[test]
+    fn test_fashion_mnist_classes_constant() {
+        assert_eq!(FASHION_MNIST_CLASSES.len(), 10);
+        assert_eq!(FASHION_MNIST_CLASSES[0], "t-shirt/top");
+        assert_eq!(FASHION_MNIST_CLASSES[9], "ankle boot");
     }
 }

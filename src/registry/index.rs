@@ -327,4 +327,145 @@ mod tests {
 
         assert_eq!(metadata.tags, vec!["a", "b", "c"]);
     }
+
+    #[test]
+    fn test_registry_index_find_mut() {
+        let mut index = RegistryIndex::new();
+        index.datasets.push(DatasetInfo {
+            name: "test".to_string(),
+            versions: vec!["1.0.0".to_string()],
+            latest: "1.0.0".to_string(),
+            size_bytes: 1000,
+            num_rows: 100,
+            schema: serde_json::json!({}),
+            metadata: DatasetMetadata::default(),
+        });
+
+        let found = index.find_mut("test");
+        assert!(found.is_some());
+        found.unwrap().size_bytes = 2000;
+        assert_eq!(index.find("test").unwrap().size_bytes, 2000);
+
+        assert!(index.find_mut("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_registry_index_default() {
+        let index = RegistryIndex::default();
+        assert_eq!(index.version, "1.0");
+        assert!(index.is_empty());
+    }
+
+    #[test]
+    fn test_registry_index_clone() {
+        let mut index = RegistryIndex::new();
+        index.datasets.push(DatasetInfo {
+            name: "test".to_string(),
+            versions: vec!["1.0.0".to_string()],
+            latest: "1.0.0".to_string(),
+            size_bytes: 1000,
+            num_rows: 100,
+            schema: serde_json::json!({}),
+            metadata: DatasetMetadata::default(),
+        });
+
+        let cloned = index.clone();
+        assert_eq!(cloned.len(), index.len());
+        assert_eq!(cloned.version, index.version);
+    }
+
+    #[test]
+    fn test_registry_index_debug() {
+        let index = RegistryIndex::new();
+        let debug = format!("{:?}", index);
+        assert!(debug.contains("RegistryIndex"));
+    }
+
+    #[test]
+    fn test_dataset_info_clone() {
+        let info = DatasetInfo {
+            name: "test".to_string(),
+            versions: vec!["1.0.0".to_string()],
+            latest: "1.0.0".to_string(),
+            size_bytes: 1000,
+            num_rows: 100,
+            schema: serde_json::json!({}),
+            metadata: DatasetMetadata::default(),
+        };
+        let cloned = info.clone();
+        assert_eq!(cloned.name, info.name);
+    }
+
+    #[test]
+    fn test_dataset_info_debug() {
+        let info = DatasetInfo {
+            name: "test".to_string(),
+            versions: vec![],
+            latest: String::new(),
+            size_bytes: 0,
+            num_rows: 0,
+            schema: serde_json::json!({}),
+            metadata: DatasetMetadata::default(),
+        };
+        let debug = format!("{:?}", info);
+        assert!(debug.contains("DatasetInfo"));
+    }
+
+    #[test]
+    fn test_dataset_metadata_clone() {
+        let metadata = DatasetMetadata {
+            description: "desc".to_string(),
+            license: "MIT".to_string(),
+            tags: vec!["a".to_string()],
+            source: Some("http://example.com".to_string()),
+            citation: Some("citation".to_string()),
+            sha256: Some("abc123".to_string()),
+        };
+        let cloned = metadata.clone();
+        assert_eq!(cloned.description, metadata.description);
+        assert_eq!(cloned.sha256, metadata.sha256);
+    }
+
+    #[test]
+    fn test_dataset_metadata_debug() {
+        let metadata = DatasetMetadata::default();
+        let debug = format!("{:?}", metadata);
+        assert!(debug.contains("DatasetMetadata"));
+    }
+
+    #[test]
+    fn test_metadata_builder_all_fields() {
+        let metadata = DatasetMetadata::builder()
+            .description("Test")
+            .license("MIT")
+            .tag("tag1")
+            .source("http://source.com")
+            .citation("Citation text")
+            .sha256("abc123def456")
+            .build();
+
+        assert_eq!(metadata.description, "Test");
+        assert_eq!(metadata.license, "MIT");
+        assert_eq!(metadata.source, Some("http://source.com".to_string()));
+        assert_eq!(metadata.citation, Some("Citation text".to_string()));
+        assert_eq!(metadata.sha256, Some("abc123def456".to_string()));
+    }
+
+    #[test]
+    fn test_dataset_metadata_builder_debug() {
+        let builder = DatasetMetadataBuilder::default();
+        let debug = format!("{:?}", builder);
+        assert!(debug.contains("DatasetMetadataBuilder"));
+    }
+
+    #[test]
+    fn test_dataset_metadata_default() {
+        let metadata = DatasetMetadata::default();
+        assert!(metadata.description.is_empty());
+        assert!(metadata.license.is_empty());
+        assert!(metadata.tags.is_empty());
+        assert!(metadata.source.is_none());
+        assert!(metadata.citation.is_none());
+        assert!(metadata.sha256.is_none());
+    }
 }

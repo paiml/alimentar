@@ -372,4 +372,79 @@ mod tests {
         assert_eq!(dataset.target_name(), "species");
         assert!(!dataset.is_empty());
     }
+
+    #[test]
+    fn test_iris_into_inner() {
+        let dataset = iris().unwrap();
+        let inner = dataset.into_inner();
+        assert_eq!(inner.len(), 150);
+    }
+
+    #[test]
+    fn test_iris_clone() {
+        let dataset = iris().unwrap();
+        let cloned = dataset.clone();
+        assert_eq!(cloned.len(), dataset.len());
+    }
+
+    #[test]
+    fn test_iris_debug() {
+        let dataset = iris().unwrap();
+        let debug = format!("{:?}", dataset);
+        assert!(debug.contains("IrisDataset"));
+    }
+
+    #[test]
+    fn test_iris_data_access() {
+        let dataset = iris().unwrap();
+        let data = dataset.data();
+        assert_eq!(data.len(), 150);
+    }
+
+    #[test]
+    fn test_iris_data_function() {
+        let (sl, sw, pl, pw, species) = iris_data();
+        assert_eq!(sl.len(), 150);
+        assert_eq!(sw.len(), 150);
+        assert_eq!(pl.len(), 150);
+        assert_eq!(pw.len(), 150);
+        assert_eq!(species.len(), 150);
+    }
+
+    #[test]
+    fn test_iris_data_species_distribution() {
+        let (_, _, _, _, species) = iris_data();
+        let setosa_count = species.iter().filter(|&&s| s == "setosa").count();
+        let versicolor_count = species.iter().filter(|&&s| s == "versicolor").count();
+        let virginica_count = species.iter().filter(|&&s| s == "virginica").count();
+        assert_eq!(setosa_count, 50);
+        assert_eq!(versicolor_count, 50);
+        assert_eq!(virginica_count, 50);
+    }
+
+    #[test]
+    fn test_iris_sepal_length_range() {
+        let (sepal_length, _, _, _, _) = iris_data();
+        for &val in &sepal_length {
+            assert!(val >= 4.0 && val <= 8.0, "Sepal length {} out of typical range", val);
+        }
+    }
+
+    #[test]
+    fn test_iris_sepal_width_range() {
+        let (_, sepal_width, _, _, _) = iris_data();
+        for &val in &sepal_width {
+            assert!(val >= 2.0 && val <= 5.0, "Sepal width {} out of typical range", val);
+        }
+    }
+
+    #[test]
+    fn test_iris_feature_names_content() {
+        let dataset = iris().unwrap();
+        let names = dataset.feature_names();
+        assert!(names.contains(&"sepal_length"));
+        assert!(names.contains(&"sepal_width"));
+        assert!(names.contains(&"petal_length"));
+        assert!(names.contains(&"petal_width"));
+    }
 }

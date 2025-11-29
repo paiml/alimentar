@@ -2075,4 +2075,354 @@ mod tests {
         metadata.sha256 = Some("abc123".to_string());
         assert_eq!(metadata.sha256, Some("abc123".to_string()));
     }
+
+    // ========== Additional edge case tests ==========
+
+    #[test]
+    fn test_header_from_bytes_too_short() {
+        let bytes = [0u8; 10]; // Too short
+        let result = Header::from_bytes(&bytes);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("too short"));
+    }
+
+    #[test]
+    fn test_header_unsupported_version() {
+        let mut header = Header::new(DatasetType::Tabular);
+        header.version = (99, 0); // Future version
+        let bytes = header.to_bytes();
+
+        // Modify magic to be valid
+        let mut valid_bytes = bytes;
+        valid_bytes[0..4].copy_from_slice(&MAGIC);
+        // Set unsupported version in bytes
+        valid_bytes[4] = 99;
+        valid_bytes[5] = 0;
+
+        let result = Header::from_bytes(&valid_bytes);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unsupported version"));
+    }
+
+    #[test]
+    fn test_header_unknown_dataset_type() {
+        let mut bytes = [0u8; HEADER_SIZE];
+        bytes[0..4].copy_from_slice(&MAGIC);
+        bytes[4] = 1; // version major
+        bytes[5] = 0; // version minor
+        bytes[6] = 0xFF; // unknown dataset type
+        bytes[7] = 0xFF;
+
+        let result = Header::from_bytes(&bytes);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown dataset type"));
+    }
+
+    #[test]
+    fn test_header_unknown_compression() {
+        let mut bytes = [0u8; HEADER_SIZE];
+        bytes[0..4].copy_from_slice(&MAGIC);
+        bytes[4] = 1; // version major
+        bytes[5] = 0; // version minor
+        bytes[6] = 0x01; // tabular dataset type
+        bytes[7] = 0x00;
+        bytes[20] = 0xFF; // unknown compression
+
+        let result = Header::from_bytes(&bytes);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown compression"));
+    }
+
+    #[test]
+    fn test_header_is_trueno_native() {
+        let mut header = Header::new(DatasetType::Tabular);
+        assert!(!header.is_trueno_native());
+
+        header.flags |= flags::TRUENO_NATIVE;
+        assert!(header.is_trueno_native());
+    }
+
+    #[test]
+    fn test_save_options_with_compression() {
+        let options = SaveOptions::default().with_compression(Compression::ZstdL19);
+        assert_eq!(options.compression, Compression::ZstdL19);
+    }
+
+    #[test]
+    fn test_save_options_with_metadata() {
+        let meta = Metadata {
+            name: Some("test".to_string()),
+            ..Default::default()
+        };
+        let options = SaveOptions::default().with_metadata(meta.clone());
+        assert!(options.metadata.is_some());
+        assert_eq!(options.metadata.unwrap().name, Some("test".to_string()));
+    }
+
+    #[test]
+    fn test_load_options_verify_license() {
+        let options = LoadOptions::default().verify_license();
+        assert!(options.verify_license);
+    }
+
+    #[test]
+    fn test_metadata_default() {
+        let metadata = Metadata::default();
+        assert!(metadata.name.is_none());
+        assert!(metadata.version.is_none());
+        assert!(metadata.license.is_none());
+        assert!(metadata.tags.is_empty());
+        assert!(metadata.description.is_none());
+        assert!(metadata.citation.is_none());
+        assert!(metadata.created_at.is_none());
+    }
+
+    #[test]
+    fn test_metadata_clone() {
+        let metadata = Metadata {
+            name: Some("test".to_string()),
+            version: Some("1.0.0".to_string()),
+            license: Some("MIT".to_string()),
+            tags: vec!["tag1".to_string(), "tag2".to_string()],
+            description: Some("desc".to_string()),
+            citation: Some("cite".to_string()),
+            created_at: Some("2024-01-01".to_string()),
+            sha256: Some("abc123".to_string()),
+        };
+
+        let cloned = metadata.clone();
+        assert_eq!(cloned.name, metadata.name);
+        assert_eq!(cloned.version, metadata.version);
+        assert_eq!(cloned.tags, metadata.tags);
+    }
+
+    #[test]
+    fn test_metadata_debug() {
+        let metadata = Metadata::default();
+        let debug = format!("{:?}", metadata);
+        assert!(debug.contains("Metadata"));
+    }
+
+    #[test]
+    fn test_save_options_debug() {
+        let options = SaveOptions::default();
+        let debug = format!("{:?}", options);
+        assert!(debug.contains("SaveOptions"));
+    }
+
+    #[test]
+    fn test_load_options_debug() {
+        let options = LoadOptions::default();
+        let debug = format!("{:?}", options);
+        assert!(debug.contains("LoadOptions"));
+    }
+
+    #[test]
+    fn test_loaded_dataset_debug() {
+        let batch = create_test_batch();
+        let batches = vec![batch];
+
+        let mut buf = Vec::new();
+        save(
+            &mut buf,
+            &batches,
+            DatasetType::Tabular,
+            &SaveOptions::default(),
+        )
+        .expect("save failed");
+
+        let loaded = load(&mut std::io::Cursor::new(&buf)).expect("load failed");
+        let debug = format!("{:?}", loaded);
+        assert!(debug.contains("LoadedDataset"));
+    }
+
+    #[test]
+    fn test_header_new_defaults() {
+        let header = Header::new(DatasetType::ImageClassification);
+        assert_eq!(header.version, (FORMAT_VERSION_MAJOR, FORMAT_VERSION_MINOR));
+        assert_eq!(header.dataset_type, DatasetType::ImageClassification);
+        assert_eq!(header.metadata_size, 0);
+        assert_eq!(header.payload_size, 0);
+        assert_eq!(header.uncompressed_size, 0);
+        assert_eq!(header.compression, Compression::default());
+        assert_eq!(header.flags, 0);
+        assert_eq!(header.schema_size, 0);
+        assert_eq!(header.num_rows, 0);
+    }
+
+    #[test]
+    fn test_compression_default() {
+        let compression = Compression::default();
+        assert_eq!(compression, Compression::ZstdL3);
+    }
+
+    #[test]
+    fn test_save_load_roundtrip_zstd_l19() {
+        let batch = create_test_batch();
+        let batches = vec![batch];
+
+        let options = SaveOptions {
+            compression: Compression::ZstdL19,
+            metadata: None,
+            ..Default::default()
+        };
+
+        let mut buf = Vec::new();
+        save(&mut buf, &batches, DatasetType::Tabular, &options).expect("save failed");
+
+        let loaded = load(&mut std::io::Cursor::new(&buf)).expect("load failed");
+
+        assert_eq!(loaded.header.compression, Compression::ZstdL19);
+        assert_eq!(loaded.batches.len(), 1);
+    }
+
+    #[test]
+    fn test_load_file_too_small() {
+        let buf = [0u8; 10]; // Too small
+        let result = load(&mut std::io::Cursor::new(&buf));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("too small"));
+    }
+
+    #[test]
+    fn test_crc32_various_inputs() {
+        // Verify CRC is different for different inputs
+        let crc1 = crc32(b"hello");
+        let crc2 = crc32(b"world");
+        let crc3 = crc32(b"helloworld");
+
+        assert_ne!(crc1, crc2);
+        assert_ne!(crc2, crc3);
+        assert_ne!(crc1, crc3);
+    }
+
+    #[test]
+    fn test_header_clone() {
+        let header = Header::new(DatasetType::Tabular);
+        let cloned = header.clone();
+        assert_eq!(cloned, header);
+    }
+
+    #[test]
+    fn test_header_debug() {
+        let header = Header::new(DatasetType::Tabular);
+        let debug = format!("{:?}", header);
+        assert!(debug.contains("Header"));
+    }
+
+    #[test]
+    fn test_dataset_type_debug() {
+        let dt = DatasetType::Tabular;
+        let debug = format!("{:?}", dt);
+        assert!(debug.contains("Tabular"));
+    }
+
+    #[test]
+    fn test_dataset_type_clone() {
+        let dt = DatasetType::ImageClassification;
+        let cloned = dt;
+        assert_eq!(dt, cloned);
+    }
+
+    #[test]
+    fn test_compression_debug() {
+        let c = Compression::ZstdL3;
+        let debug = format!("{:?}", c);
+        assert!(debug.contains("ZstdL3"));
+    }
+
+    #[test]
+    fn test_compression_clone() {
+        let c = Compression::Lz4;
+        let cloned = c;
+        assert_eq!(c, cloned);
+    }
+
+    #[test]
+    fn test_save_options_clone() {
+        let options = SaveOptions::default()
+            .with_compression(Compression::Lz4);
+        let cloned = options.clone();
+        assert_eq!(cloned.compression, Compression::Lz4);
+    }
+
+    #[test]
+    fn test_load_options_clone() {
+        let options = LoadOptions::default().verify_license();
+        let cloned = options.clone();
+        assert!(cloned.verify_license);
+    }
+
+    #[test]
+    fn test_flags_constants() {
+        assert_eq!(flags::ENCRYPTED, 0b0000_0001);
+        assert_eq!(flags::SIGNED, 0b0000_0010);
+        assert_eq!(flags::STREAMING, 0b0000_0100);
+        assert_eq!(flags::LICENSED, 0b0000_1000);
+        assert_eq!(flags::TRUENO_NATIVE, 0b0001_0000);
+    }
+
+    #[test]
+    fn test_header_all_flags_combined() {
+        let mut header = Header::new(DatasetType::Tabular);
+        header.flags = flags::ENCRYPTED | flags::SIGNED | flags::STREAMING | flags::LICENSED | flags::TRUENO_NATIVE;
+
+        assert!(header.is_encrypted());
+        assert!(header.is_signed());
+        assert!(header.is_streaming());
+        assert!(header.is_licensed());
+        assert!(header.is_trueno_native());
+
+        // Roundtrip to bytes and back
+        let bytes = header.to_bytes();
+        let parsed = Header::from_bytes(&bytes).expect("parse");
+        assert_eq!(parsed.flags, header.flags);
+    }
+
+    #[test]
+    fn test_save_to_file_and_load_from_file() {
+        let batch = create_test_batch();
+        let batches = vec![batch];
+
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("temp dir"));
+        let path = temp_dir.path().join("test.ald");
+
+        save_to_file(&path, &batches, DatasetType::Tabular, &SaveOptions::default())
+            .expect("save failed");
+
+        let loaded = load_from_file(&path).expect("load failed");
+        assert_eq!(loaded.batches.len(), 1);
+        assert_eq!(loaded.batches[0].num_rows(), 5);
+    }
+
+    #[test]
+    fn test_save_to_file_invalid_path() {
+        let batch = create_test_batch();
+        let batches = vec![batch];
+
+        let result = save_to_file(
+            "/nonexistent/path/test.ald",
+            &batches,
+            DatasetType::Tabular,
+            &SaveOptions::default(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_from_file_not_found() {
+        let result = load_from_file("/nonexistent/path/test.ald");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_from_file_with_options_not_found() {
+        let result = load_from_file_with_options(
+            "/nonexistent/path/test.ald",
+            &LoadOptions::default(),
+        );
+        assert!(result.is_err());
+    }
 }

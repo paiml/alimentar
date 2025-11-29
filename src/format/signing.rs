@@ -250,4 +250,82 @@ mod tests {
 
         assert_ne!(sig1, sig2);
     }
+
+    #[test]
+    fn test_signature_block_from_bytes_too_small() {
+        let buf = [0u8; 10]; // Too small
+        let result = SignatureBlock::from_bytes(&buf);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("too small"));
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(PUBLIC_KEY_SIZE, 32);
+        assert_eq!(SIGNATURE_SIZE, 64);
+        assert_eq!(SignatureBlock::SIZE, 96);
+    }
+
+    #[test]
+    fn test_signing_key_pair_clone() {
+        let key_pair = SigningKeyPair::generate().expect("keygen failed");
+        let cloned = key_pair.clone();
+        assert_eq!(key_pair.public_key_bytes(), cloned.public_key_bytes());
+        assert_eq!(key_pair.secret_key_bytes(), cloned.secret_key_bytes());
+    }
+
+    #[test]
+    fn test_signing_key_pair_debug() {
+        let key_pair = SigningKeyPair::generate().expect("keygen failed");
+        let debug = format!("{:?}", key_pair);
+        assert!(debug.contains("SigningKeyPair"));
+        assert!(debug.contains("REDACTED"));
+    }
+
+    #[test]
+    fn test_signature_block_clone() {
+        let key_pair = SigningKeyPair::generate().expect("keygen failed");
+        let data = b"Test data";
+        let block = SignatureBlock::sign(data, &key_pair);
+        let cloned = block.clone();
+        assert_eq!(cloned.signature, block.signature);
+        assert_eq!(cloned.public_key, block.public_key);
+    }
+
+    #[test]
+    fn test_signature_block_debug() {
+        let key_pair = SigningKeyPair::generate().expect("keygen failed");
+        let block = SignatureBlock::sign(b"test", &key_pair);
+        let debug = format!("{:?}", block);
+        assert!(debug.contains("SignatureBlock"));
+    }
+
+    #[test]
+    fn test_verify_invalid_public_key() {
+        let message = b"Test message";
+        let signature = [0u8; 64];
+        // All zeros is not a valid public key for Ed25519
+        let invalid_pk = [0u8; 32];
+        let result = verify(message, &signature, &invalid_pk);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_empty_message_signing() {
+        let key_pair = SigningKeyPair::generate().expect("keygen failed");
+        let message = b"";
+        let signature = key_pair.sign(message);
+        let public_key = key_pair.public_key_bytes();
+        verify(message, &signature, &public_key).expect("empty message verify failed");
+    }
+
+    #[test]
+    fn test_large_message_signing() {
+        let key_pair = SigningKeyPair::generate().expect("keygen failed");
+        let message = vec![0xABu8; 1024 * 1024]; // 1MB
+        let signature = key_pair.sign(&message);
+        let public_key = key_pair.public_key_bytes();
+        verify(&message, &signature, &public_key).expect("large message verify failed");
+    }
 }
