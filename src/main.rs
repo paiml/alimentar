@@ -82,6 +82,10 @@ enum Commands {
     /// Federated split coordination commands
     #[command(subcommand)]
     Fed(FedCommands),
+    /// Python doctest extraction commands
+    #[cfg(feature = "doctest")]
+    #[command(subcommand)]
+    Doctest(DoctestCommands),
 }
 
 /// Import source options
@@ -375,6 +379,35 @@ enum FedCommands {
     },
 }
 
+/// Python doctest extraction commands
+#[cfg(feature = "doctest")]
+#[derive(Subcommand)]
+enum DoctestCommands {
+    /// Extract doctests from Python source files
+    Extract {
+        /// Input directory containing Python source files
+        input: PathBuf,
+        /// Output parquet file
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Source identifier (e.g., "cpython", "numpy")
+        #[arg(short, long, default_value = "unknown")]
+        source: String,
+        /// Version string or git SHA
+        #[arg(short, long, default_value = "unknown")]
+        version: String,
+    },
+    /// Merge multiple doctest corpora into one
+    Merge {
+        /// Input parquet files to merge
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Output parquet file
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+}
+
 #[allow(clippy::too_many_lines)]
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -518,6 +551,16 @@ fn main() -> ExitCode {
                 validation_output.as_ref(),
             ),
             FedCommands::Verify { manifests, format } => cmd_fed_verify(&manifests, &format),
+        },
+        #[cfg(feature = "doctest")]
+        Commands::Doctest(doctest_cmd) => match doctest_cmd {
+            DoctestCommands::Extract {
+                input,
+                output,
+                source,
+                version,
+            } => cmd_doctest_extract(&input, &output, &source, &version),
+            DoctestCommands::Merge { inputs, output } => cmd_doctest_merge(&inputs, &output),
         },
     };
 
@@ -1671,6 +1714,85 @@ fn cmd_fed_verify(manifests: &[PathBuf], format: &str) -> alimentar::Result<()> 
         }
     }
 
+    Ok(())
+}
+
+// =============================================================================
+// Doctest Commands
+// =============================================================================
+
+#[cfg(feature = "doctest")]
+fn cmd_doctest_extract(
+    input: &Path,
+    output: &Path,
+    source: &str,
+    version: &str,
+) -> alimentar::Result<()> {
+    use alimentar::DocTestParser;
+
+    if !input.is_dir() {
+        return Err(alimentar::Error::invalid_config(format!(
+            "Input path must be a directory: {}",
+            input.display()
+        )));
+    }
+
+    let parser = DocTestParser::new();
+    let corpus = parser.parse_directory(input, source, version)?;
+
+    println!(
+        "Extracted {} doctests from {} ({})",
+        corpus.len(),
+        source,
+        version
+    );
+
+    if corpus.is_empty() {
+        println!("Warning: No doctests found in {}", input.display());
+        return Ok(());
+    }
+
+    let dataset = corpus.to_dataset()?;
+    dataset.to_parquet(output)?;
+
+    println!("Wrote {} to {}", corpus.len(), output.display());
+    Ok(())
+}
+
+#[cfg(feature = "doctest")]
+fn cmd_doctest_merge(inputs: &[PathBuf], output: &Path) -> alimentar::Result<()> {
+    if inputs.is_empty() {
+        return Err(alimentar::Error::invalid_config("No input files provided"));
+    }
+
+    // Load all datasets and concatenate
+    let mut all_batches = Vec::new();
+    let mut total_rows = 0;
+
+    for input in inputs {
+        let dataset = ArrowDataset::from_parquet(input)?;
+        total_rows += dataset.len();
+        for batch in dataset.iter() {
+            all_batches.push(batch.clone());
+        }
+    }
+
+    if all_batches.is_empty() {
+        return Err(alimentar::Error::invalid_config(
+            "No data found in input files",
+        ));
+    }
+
+    // Create merged dataset
+    let merged = ArrowDataset::new(all_batches)?;
+    merged.to_parquet(output)?;
+
+    println!(
+        "Merged {} doctests from {} files to {}",
+        total_rows,
+        inputs.len(),
+        output.display()
+    );
     Ok(())
 }
 

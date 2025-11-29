@@ -72,6 +72,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "bytes",
+ "chrono",
  "clap",
  "criterion",
  "ed25519-dalek",
@@ -83,6 +84,7 @@ dependencies = [
  "parquet",
  "rand 0.8.5",
  "rand_core 0.6.4",
+ "regex",
  "reqwest",
  "rmp-serde",
  "serde",
@@ -92,6 +94,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "walkdir",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "x25519-dalek",
@@ -981,7 +984,10 @@ checksum = "7e36cc9d416881d2e24f9a963be5fb1cd90966419ac844274161d10488b3e825"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
+ "serde",
+ "wasm-bindgen",
  "windows-targets 0.52.6",
 ]
 
