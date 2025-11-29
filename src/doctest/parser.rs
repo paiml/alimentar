@@ -509,4 +509,69 @@ def foo():
         assert_eq!(doctests[0].input, ">>> x = (\n...     1 + 2\n... )");
         assert_eq!(doctests[0].expected, "");
     }
+
+    // ========== Property Tests (50 cases for fast CI) ==========
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn prop_empty_never_prose(s in "\\s*") {
+            // Empty/whitespace-only is never prose
+            assert!(!is_prose_continuation(&s));
+        }
+
+        #[test]
+        fn prop_python_literals_never_prose(literal in prop_oneof![
+            Just("True"),
+            Just("False"),
+            Just("None"),
+        ]) {
+            assert!(!is_prose_continuation(literal));
+        }
+
+        #[test]
+        fn prop_exception_lines_never_prose(exc in prop_oneof![
+            Just("ValueError: invalid input"),
+            Just("TypeError: expected str"),
+            Just("ZeroDivisionError: division by zero"),
+            Just("KeyError: 'missing'"),
+            Just("IndexError: out of range"),
+            Just("RuntimeError: something went wrong"),
+        ]) {
+            assert!(!is_prose_continuation(exc), "Exception detected as prose: {}", exc);
+        }
+
+        #[test]
+        fn prop_docstring_markers_are_prose(marker in prop_oneof![
+            Just(":param x: value"),
+            Just(":return: result"),
+            Just(":raises ValueError: msg"),
+            Just(":type x: int"),
+        ]) {
+            assert!(is_prose_continuation(marker));
+        }
+
+        #[test]
+        fn prop_code_output_preserved(output in prop_oneof![
+            Just("[1, 2, 3]"),
+            Just("{'a': 1}"),
+            Just("(1, 2)"),
+            Just("<object at 0x...>"),
+            Just("123"),
+            Just("'string'"),
+        ]) {
+            assert!(!is_prose_continuation(output));
+        }
+
+        #[test]
+        fn prop_deterministic(s in ".*") {
+            // Same input always gives same output (determinism)
+            let r1 = is_prose_continuation(&s);
+            let r2 = is_prose_continuation(&s);
+            assert_eq!(r1, r2);
+        }
+    }
 }
