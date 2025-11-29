@@ -4,6 +4,7 @@
 //! Phase 1 (Red): All tests should FAIL until implementation is complete.
 
 #![cfg(feature = "doctest")]
+#![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use alimentar::{Dataset, DocTest, DocTestCorpus, DocTestParser};
 

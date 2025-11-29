@@ -52,7 +52,7 @@ fn main() {
         );
     }
 
-    println!("\nResults: {} passed, {} failed", passed, failed);
+    println!("\nResults: {passed} passed, {failed} failed");
     if failed > 0 {
         std::process::exit(1);
     }
