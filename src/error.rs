@@ -125,6 +125,14 @@ pub enum Error {
     /// Decryption failed.
     #[error("Decryption failed: wrong password or corrupted data")]
     DecryptionFailed,
+
+    /// Resource not found.
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    /// Invalid format for output/conversion.
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
 }
 
 impl Error {

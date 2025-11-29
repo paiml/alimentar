@@ -1131,4 +1131,210 @@ mod tests {
         assert_eq!(lower, dataset.num_chunks());
         assert_eq!(upper, Some(dataset.num_chunks()));
     }
+
+    #[test]
+    fn test_chunk_index_iter() {
+        let entries = vec![
+            ChunkEntry::new(0, 100, 0, 500, 800),
+            ChunkEntry::new(100, 100, 500, 500, 800),
+        ];
+        let index = ChunkIndex::from_entries(entries);
+
+        let collected: Vec<_> = index.iter().collect();
+        assert_eq!(collected.len(), 2);
+        assert_eq!(collected[0].row_offset, 0);
+        assert_eq!(collected[1].row_offset, 100);
+    }
+
+    #[test]
+    fn test_chunk_index_from_entries_empty() {
+        let index = ChunkIndex::from_entries(vec![]);
+        assert!(index.is_empty());
+        assert_eq!(index.total_rows(), 0);
+    }
+
+    #[test]
+    fn test_streaming_dataset_schema() {
+        let batches = vec![make_test_batch(100, 0)];
+        let schema = test_schema();
+
+        let temp = NamedTempFile::new().expect("temp");
+        save_streaming(
+            batches.into_iter(),
+            &schema,
+            temp.path(),
+            Some(50),
+            Compression::None,
+        )
+        .expect("save");
+
+        let dataset = StreamingDataset::open(temp.path()).expect("open");
+        let ds_schema = dataset.schema();
+        assert_eq!(ds_schema.fields().len(), 2);
+        assert_eq!(ds_schema.field(0).name(), "id");
+        assert_eq!(ds_schema.field(1).name(), "value");
+    }
+
+    #[test]
+    fn test_streaming_dataset_debug() {
+        let batches = vec![make_test_batch(100, 0)];
+        let schema = test_schema();
+
+        let temp = NamedTempFile::new().expect("temp");
+        save_streaming(
+            batches.into_iter(),
+            &schema,
+            temp.path(),
+            Some(50),
+            Compression::None,
+        )
+        .expect("save");
+
+        let dataset = StreamingDataset::open(temp.path()).expect("open");
+        let debug = format!("{:?}", dataset);
+        assert!(debug.contains("StreamingDataset"));
+        assert!(debug.contains("num_rows"));
+        assert!(debug.contains("num_chunks"));
+    }
+
+    #[test]
+    fn test_save_streaming_with_lz4_compression() {
+        let batches = vec![make_test_batch(1000, 0)];
+        let schema = test_schema();
+
+        let temp = NamedTempFile::new().expect("temp");
+        save_streaming(
+            batches.into_iter(),
+            &schema,
+            temp.path(),
+            Some(500),
+            Compression::Lz4,
+        )
+        .expect("save");
+
+        let dataset = StreamingDataset::open(temp.path()).expect("open");
+        assert_eq!(dataset.num_rows(), 1000);
+    }
+
+    #[test]
+    fn test_save_streaming_with_zstd_l19_compression() {
+        let batches = vec![make_test_batch(500, 0)];
+        let schema = test_schema();
+
+        let temp = NamedTempFile::new().expect("temp");
+        save_streaming(
+            batches.into_iter(),
+            &schema,
+            temp.path(),
+            Some(250),
+            Compression::ZstdL19,
+        )
+        .expect("save");
+
+        let dataset = StreamingDataset::open(temp.path()).expect("open");
+        assert_eq!(dataset.num_rows(), 500);
+    }
+
+    #[test]
+    fn test_save_streaming_default_chunk_size() {
+        let batches = vec![make_test_batch(100, 0)];
+        let schema = test_schema();
+
+        let temp = NamedTempFile::new().expect("temp");
+        save_streaming(
+            batches.into_iter(),
+            &schema,
+            temp.path(),
+            None, // Use default chunk size
+            Compression::None,
+        )
+        .expect("save");
+
+        let dataset = StreamingDataset::open(temp.path()).expect("open");
+        assert_eq!(dataset.num_rows(), 100);
+    }
+
+    #[test]
+    fn test_get_rows_clamps_to_end() {
+        let batches = vec![make_test_batch(100, 0)];
+        let schema = test_schema();
+
+        let temp = NamedTempFile::new().expect("temp");
+        save_streaming(
+            batches.into_iter(),
+            &schema,
+            temp.path(),
+            Some(50),
+            Compression::None,
+        )
+        .expect("save");
+
+        let dataset = StreamingDataset::open(temp.path()).expect("open");
+        // Request more rows than available
+        let rows = dataset.get_rows(90, 50).expect("get_rows");
+        assert_eq!(rows.num_rows(), 10); // Should clamp to 10 remaining rows
+    }
+
+    #[test]
+    fn test_chunk_entry_clone_and_eq() {
+        let entry1 = ChunkEntry::new(0, 100, 0, 500, 800);
+        let entry2 = entry1.clone();
+        assert_eq!(entry1, entry2);
+    }
+
+    #[test]
+    fn test_chunk_index_clone() {
+        let entries = vec![
+            ChunkEntry::new(0, 100, 0, 500, 800),
+            ChunkEntry::new(100, 100, 500, 500, 800),
+        ];
+        let index = ChunkIndex::from_entries(entries);
+        let cloned = index.clone();
+
+        assert_eq!(cloned.len(), index.len());
+        assert_eq!(cloned.total_rows(), index.total_rows());
+    }
+
+    #[test]
+    fn test_chunk_entry_debug() {
+        let entry = ChunkEntry::new(0, 100, 0, 500, 800);
+        let debug = format!("{:?}", entry);
+        assert!(debug.contains("ChunkEntry"));
+        assert!(debug.contains("row_offset"));
+    }
+
+    #[test]
+    fn test_chunk_index_debug() {
+        let index = ChunkIndex::new();
+        let debug = format!("{:?}", index);
+        assert!(debug.contains("ChunkIndex"));
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(DEFAULT_CHUNK_SIZE, 65536);
+        assert_eq!(STREAMING_THRESHOLD, 100 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_chunks_iterator_exact_size() {
+        let batches = vec![make_test_batch(200, 0)];
+        let schema = test_schema();
+
+        let temp = NamedTempFile::new().expect("temp");
+        save_streaming(
+            batches.into_iter(),
+            &schema,
+            temp.path(),
+            Some(50),
+            Compression::None,
+        )
+        .expect("save");
+
+        let dataset = StreamingDataset::open(temp.path()).expect("open");
+        let chunks = dataset.chunks();
+
+        // ExactSizeIterator provides len()
+        assert_eq!(chunks.len(), dataset.num_chunks());
+    }
 }

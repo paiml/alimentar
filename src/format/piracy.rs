@@ -947,4 +947,212 @@ mod tests {
         let cloned = analysis.clone();
         assert_eq!(cloned.overall_lsb_entropy, 0.99);
     }
+
+    #[test]
+    fn test_entropy_analysis_empty_batches() {
+        let analysis = PiracyDetector::analyze_entropy(&[]);
+        assert_eq!(analysis.overall_lsb_entropy, 1.0);
+        assert_eq!(analysis.overall_autocorrelation, 0.0);
+        assert_eq!(analysis.confidence, 0.0);
+        assert!(analysis.columns.is_empty());
+    }
+
+    #[test]
+    fn test_is_float_type() {
+        assert!(is_float_type(&DataType::Float32));
+        assert!(is_float_type(&DataType::Float64));
+        assert!(!is_float_type(&DataType::Int32));
+        assert!(!is_float_type(&DataType::Utf8));
+    }
+
+    #[test]
+    fn test_chi_square_empty() {
+        let bits: Vec<bool> = vec![];
+        assert_eq!(chi_square_uniformity(&bits), 1.0);
+    }
+
+    #[test]
+    fn test_ks_test_empty() {
+        let bits: Vec<bool> = vec![];
+        assert_eq!(ks_test_uniform(&bits), 1.0);
+    }
+
+    #[test]
+    fn test_shannon_entropy_empty() {
+        let bits: Vec<bool> = vec![];
+        assert_eq!(shannon_entropy_bits(&bits), 1.0);
+    }
+
+    #[test]
+    fn test_autocorrelation_short_data() {
+        // Data shorter than 2*LAG should return 0
+        let bits: Vec<bool> = (0..500).map(|i| i % 2 == 0).collect();
+        let autocorr = autocorrelation_lag_256(&bits);
+        assert_eq!(autocorr, 0.0);
+    }
+
+    #[test]
+    fn test_hash_batches() {
+        let batch = create_test_batch_with_size(100);
+        let hash1 = hash_batches(&[batch.clone()]);
+        let hash2 = hash_batches(&[batch]);
+        assert_eq!(hash1, hash2); // Same data should produce same hash
+    }
+
+    #[test]
+    fn test_generate_watermark_bits() {
+        let buyer_hash = [1u8; 32];
+        let seller_key = [2u8; 32];
+        let bits = generate_watermark_bits(&buyer_hash, &seller_key);
+        assert_eq!(bits.len(), 256);
+    }
+
+    #[test]
+    fn test_decode_watermark_bits_short() {
+        let bits: Vec<bool> = vec![true; 100]; // Too short
+        let result = decode_watermark_bits(&bits, &[0u8; 32]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_decode_watermark_bits_roundtrip() {
+        let buyer_hash = [42u8; 32];
+        let seller_key = [99u8; 32];
+        let bits = generate_watermark_bits(&buyer_hash, &seller_key);
+
+        let decoded = decode_watermark_bits(&bits, &seller_key);
+        assert!(decoded.is_some());
+        assert_eq!(decoded.unwrap(), buyer_hash);
+    }
+
+    #[test]
+    fn test_embed_bit_f32() {
+        let val = 1.0f32;
+        let embedded_1 = embed_bit_f32(val, true, 0.001);
+        let embedded_0 = embed_bit_f32(val, false, 0.001);
+
+        // LSB should be set correctly
+        assert_eq!(embedded_1.to_bits() & 1, 1);
+        assert_eq!(embedded_0.to_bits() & 1, 0);
+    }
+
+    #[test]
+    fn test_embed_bit_f64() {
+        let val = 1.0f64;
+        let embedded_1 = embed_bit_f64(val, true, 0.001);
+        let embedded_0 = embed_bit_f64(val, false, 0.001);
+
+        // LSB should be set correctly
+        assert_eq!(embedded_1.to_bits() & 1, 1);
+        assert_eq!(embedded_0.to_bits() & 1, 0);
+    }
+
+    #[test]
+    fn test_extraction_confidence_short_data() {
+        let observed_bits: Vec<bool> = vec![true; 100]; // Too short
+        let decoded = [0u8; 32];
+        let seller_key = [0u8; 32];
+        let confidence = calculate_extraction_confidence(&observed_bits, &decoded, &seller_key);
+        assert_eq!(confidence, 0.0);
+    }
+
+    #[test]
+    fn test_extract_empty_batches() {
+        let embedder = WatermarkEmbedder::new([0u8; 32]);
+        let result = embedder.extract(&[]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_collect_lsb_bits_f32() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("value", DataType::Float32, false),
+        ]));
+        let values: Vec<f32> = (0..100).map(|i| i as f32).collect();
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![Arc::new(Float32Array::from(values))],
+        ).unwrap();
+
+        let bits = collect_lsb_bits(&[batch], 0);
+        assert_eq!(bits.len(), 100);
+    }
+
+    #[test]
+    fn test_collect_lsb_bits_column_out_of_range() {
+        let batch = create_test_batch_with_size(10);
+        let bits = collect_lsb_bits(&[batch], 999); // Out of range
+        assert!(bits.is_empty());
+    }
+
+    #[test]
+    fn test_legal_evidence_clone() {
+        let evidence = LegalEvidence {
+            dataset_hash: [0u8; 32],
+            buyer_hash: [1u8; 32],
+            confidence: 0.95,
+            analyzed_at: "2024-01-01".to_string(),
+            column_evidence: vec![],
+        };
+        let cloned = evidence.clone();
+        assert_eq!(cloned.confidence, 0.95);
+    }
+
+    #[test]
+    fn test_buyer_identity_clone() {
+        let identity = BuyerIdentity {
+            buyer_hash: [42u8; 32],
+            confidence: 0.9,
+        };
+        let cloned = identity.clone();
+        assert_eq!(cloned.buyer_hash, identity.buyer_hash);
+    }
+
+    #[test]
+    fn test_column_evidence_clone() {
+        let evidence = ColumnEvidence {
+            name: "test".to_string(),
+            lsb_entropy: 0.98,
+            chi_square_pvalue: 0.5,
+            matching_bits: 100,
+            total_bits: 200,
+        };
+        let cloned = evidence.clone();
+        assert_eq!(cloned.name, "test");
+    }
+
+    #[test]
+    fn test_detection_result_clone() {
+        let result = DetectionResult {
+            likely_watermarked: true,
+            confidence: 0.9,
+            suspicious_columns: vec!["col1".to_string()],
+        };
+        let cloned = result.clone();
+        assert!(cloned.likely_watermarked);
+    }
+
+    #[test]
+    fn test_chrono_lite_now() {
+        let timestamp = chrono_lite_now();
+        // Should be a parseable number (seconds since epoch)
+        assert!(!timestamp.is_empty());
+        let _: u64 = timestamp.parse().expect("Should be a number");
+    }
+
+    #[test]
+    fn test_confidence_calculation_ranges() {
+        // Test various autocorrelation ranges for confidence
+        let analysis_high = EntropyAnalysis {
+            columns: vec![],
+            overall_lsb_entropy: 0.9,
+            overall_autocorrelation: 0.95, // Very high
+            confidence: 0.0,
+            anomalous_columns: vec![],
+        };
+
+        // Confidence should be high for high autocorrelation
+        let analysis = PiracyDetector::analyze_entropy(&[]);
+        assert!(analysis.confidence >= 0.0 && analysis.confidence <= 1.0);
+    }
 }

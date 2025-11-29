@@ -1361,4 +1361,452 @@ mod tests {
 
         assert!(!results[0].quantile_diffs.is_empty());
     }
+
+    // ========== Additional edge case tests ==========
+
+    #[test]
+    fn test_centroid_new_and_merge() {
+        let mut c1 = Centroid::new(10.0, 2.0);
+        let c2 = Centroid::new(20.0, 3.0);
+        c1.merge(&c2);
+        // Weighted average: (10*2 + 20*3) / 5 = 80/5 = 16
+        assert!((c1.mean - 16.0).abs() < f64::EPSILON);
+        assert_eq!(c1.weight, 5.0);
+    }
+
+    #[test]
+    fn test_centroid_merge_zero_weights() {
+        let mut c1 = Centroid::new(10.0, 0.0);
+        let c2 = Centroid::new(20.0, 0.0);
+        c1.merge(&c2);
+        // total_weight = 0, so merge shouldn't change mean
+        assert_eq!(c1.mean, 10.0);
+        assert_eq!(c1.weight, 0.0);
+    }
+
+    #[test]
+    fn test_tdigest_add_weighted_non_finite() {
+        let mut digest = TDigest::new(100.0);
+        digest.add_weighted(f64::NAN, 1.0);
+        digest.add_weighted(f64::INFINITY, 1.0);
+        digest.add_weighted(f64::NEG_INFINITY, 1.0);
+        assert!(digest.is_empty());
+    }
+
+    #[test]
+    fn test_tdigest_add_weighted_zero_weight() {
+        let mut digest = TDigest::new(100.0);
+        digest.add_weighted(5.0, 0.0);
+        digest.add_weighted(10.0, -1.0);
+        assert!(digest.is_empty());
+    }
+
+    #[test]
+    fn test_tdigest_num_centroids() {
+        let mut digest = TDigest::new(100.0);
+        assert_eq!(digest.num_centroids(), 0);
+
+        digest.add(5.0);
+        assert!(digest.num_centroids() > 0);
+    }
+
+    #[test]
+    fn test_tdigest_quantile_clamp() {
+        let mut digest = TDigest::new(100.0);
+        digest.add_batch(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+
+        // Test clamping of out-of-range quantiles
+        let q_neg = digest.quantile(-0.5);
+        let q_over = digest.quantile(1.5);
+        assert_eq!(q_neg, digest.min());
+        assert_eq!(q_over, digest.max());
+    }
+
+    #[test]
+    fn test_tdigest_merge_empty() {
+        let merged = TDigest::merge(&[]);
+        assert!(merged.is_empty());
+        assert_eq!(merged.compression, 100.0);
+    }
+
+    #[test]
+    fn test_tdigest_cdf_empty() {
+        let digest = TDigest::new(100.0);
+        assert_eq!(digest.cdf(5.0), 0.0);
+    }
+
+    #[test]
+    fn test_tdigest_clone() {
+        let mut digest = TDigest::new(100.0);
+        digest.add_batch(&[1.0, 2.0, 3.0]);
+
+        let cloned = digest.clone();
+        assert_eq!(cloned.count(), digest.count());
+        assert_eq!(cloned.min(), digest.min());
+        assert_eq!(cloned.max(), digest.max());
+    }
+
+    #[test]
+    fn test_tdigest_debug() {
+        let digest = TDigest::new(100.0);
+        let debug = format!("{:?}", digest);
+        assert!(debug.contains("TDigest"));
+    }
+
+    #[test]
+    fn test_ddsketch_add_non_finite() {
+        let mut sketch = DDSketch::new(0.01);
+        sketch.add(f64::NAN);
+        sketch.add(f64::INFINITY);
+        sketch.add(f64::NEG_INFINITY);
+        assert!(sketch.is_empty());
+    }
+
+    #[test]
+    fn test_ddsketch_add_zero() {
+        let mut sketch = DDSketch::new(0.01);
+        sketch.add(0.0);
+        assert_eq!(sketch.count(), 1);
+        assert_eq!(sketch.quantile(0.5), 0.0);
+    }
+
+    #[test]
+    fn test_ddsketch_quantile_clamp() {
+        let mut sketch = DDSketch::new(0.01);
+        sketch.add_batch(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+
+        let q_neg = sketch.quantile(-0.5);
+        let q_over = sketch.quantile(1.5);
+        assert_eq!(q_neg, sketch.min());
+        assert_eq!(q_over, sketch.max());
+    }
+
+    #[test]
+    fn test_ddsketch_merge_empty() {
+        let merged = DDSketch::merge(&[]);
+        assert!(merged.is_empty());
+    }
+
+    #[test]
+    fn test_ddsketch_alpha_clamp() {
+        // Alpha too small
+        let sketch1 = DDSketch::new(0.00001);
+        assert!(sketch1.alpha >= 0.0001);
+
+        // Alpha too large
+        let sketch2 = DDSketch::new(0.9);
+        assert!(sketch2.alpha <= 0.5);
+    }
+
+    #[test]
+    fn test_ddsketch_clone() {
+        let mut sketch = DDSketch::new(0.01);
+        sketch.add_batch(&[1.0, 2.0, 3.0]);
+
+        let cloned = sketch.clone();
+        assert_eq!(cloned.count(), sketch.count());
+        assert_eq!(cloned.min(), sketch.min());
+    }
+
+    #[test]
+    fn test_ddsketch_debug() {
+        let sketch = DDSketch::new(0.01);
+        let debug = format!("{:?}", sketch);
+        assert!(debug.contains("DDSketch"));
+    }
+
+    #[test]
+    fn test_sketch_type_equality() {
+        assert_eq!(SketchType::TDigest, SketchType::TDigest);
+        assert_ne!(SketchType::TDigest, SketchType::DDSketch);
+    }
+
+    #[test]
+    fn test_sketch_type_clone() {
+        let st = SketchType::DDSketch;
+        let cloned = st;
+        assert_eq!(st, cloned);
+    }
+
+    #[test]
+    fn test_sketch_type_debug() {
+        let st = SketchType::TDigest;
+        let debug = format!("{:?}", st);
+        assert!(debug.contains("TDigest"));
+    }
+
+    #[test]
+    fn test_data_sketch_new() {
+        let sketch = DataSketch::new(SketchType::TDigest);
+        assert_eq!(sketch.sketch_type, SketchType::TDigest);
+        assert_eq!(sketch.row_count, 0);
+        assert!(sketch.source.is_none());
+    }
+
+    #[test]
+    fn test_data_sketch_with_source() {
+        let sketch = DataSketch::new(SketchType::TDigest).with_source("node1");
+        assert_eq!(sketch.source, Some("node1".to_string()));
+    }
+
+    #[test]
+    fn test_data_sketch_merge_empty_error() {
+        let result = DataSketch::merge(&[]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_data_sketch_merge_different_types_error() {
+        let sketch1 = DataSketch::new(SketchType::TDigest);
+        let sketch2 = DataSketch::new(SketchType::DDSketch);
+
+        let result = DataSketch::merge(&[sketch1, sketch2]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_data_sketch_quantile_not_found() {
+        let sketch = DataSketch::new(SketchType::TDigest);
+        assert!(sketch.quantile("nonexistent", 0.5).is_none());
+    }
+
+    #[test]
+    fn test_data_sketch_clone() {
+        let values: Vec<f64> = (0..50).map(|i| i as f64).collect();
+        let dataset = make_float_dataset(values);
+        let sketch = DataSketch::from_dataset(&dataset, SketchType::TDigest).expect("sketch");
+
+        let cloned = sketch.clone();
+        assert_eq!(cloned.row_count, sketch.row_count);
+        assert_eq!(cloned.sketch_type, sketch.sketch_type);
+    }
+
+    #[test]
+    fn test_data_sketch_debug() {
+        let sketch = DataSketch::new(SketchType::DDSketch);
+        let debug = format!("{:?}", sketch);
+        assert!(debug.contains("DataSketch"));
+    }
+
+    #[test]
+    fn test_sketch_drift_result_clone() {
+        let result = SketchDriftResult {
+            column: "test".to_string(),
+            statistic: 0.5,
+            severity: DriftSeverity::Medium,
+            quantile_diffs: vec![(0.5, 0.1)],
+        };
+
+        let cloned = result.clone();
+        assert_eq!(cloned.column, result.column);
+        assert_eq!(cloned.statistic, result.statistic);
+    }
+
+    #[test]
+    fn test_sketch_drift_result_debug() {
+        let result = SketchDriftResult {
+            column: "test".to_string(),
+            statistic: 0.5,
+            severity: DriftSeverity::None,
+            quantile_diffs: vec![],
+        };
+
+        let debug = format!("{:?}", result);
+        assert!(debug.contains("SketchDriftResult"));
+    }
+
+    #[test]
+    fn test_distributed_detector_default() {
+        let detector = DistributedDriftDetector::default();
+        assert_eq!(detector.sketch_type, SketchType::TDigest);
+    }
+
+    #[test]
+    fn test_distributed_detector_compare_type_mismatch() {
+        let sketch1 = DataSketch::new(SketchType::TDigest);
+        let sketch2 = DataSketch::new(SketchType::DDSketch);
+
+        let detector = DistributedDriftDetector::new();
+        let result = detector.compare(&sketch1, &sketch2);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_distributed_detector_num_quantiles_min() {
+        let detector = DistributedDriftDetector::new().with_num_quantiles(1);
+        assert!(detector.num_quantiles >= 5);
+    }
+
+    #[test]
+    fn test_tdigest_compression_triggers() {
+        // Add enough values to trigger compression
+        let mut digest = TDigest::new(10.0); // Low compression to trigger often
+        for i in 0..1000 {
+            digest.add(i as f64);
+        }
+        // Should have compressed
+        assert!(digest.num_centroids() < 1000);
+    }
+
+    #[test]
+    fn test_tdigest_serialization_invalid() {
+        let result = TDigest::from_bytes(&[0, 1, 2, 3]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ddsketch_serialization_invalid() {
+        let result = DDSketch::from_bytes(&[0, 1, 2, 3]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_data_sketch_serialization_invalid() {
+        let result = DataSketch::from_bytes(&[0, 1, 2, 3]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_centroid_clone() {
+        let c = Centroid::new(5.0, 2.0);
+        let cloned = c.clone();
+        assert_eq!(cloned.mean, c.mean);
+        assert_eq!(cloned.weight, c.weight);
+    }
+
+    #[test]
+    fn test_centroid_debug() {
+        let c = Centroid::new(5.0, 2.0);
+        let debug = format!("{:?}", c);
+        assert!(debug.contains("Centroid"));
+    }
+
+    #[test]
+    fn test_data_sketch_merge_ddsketch() {
+        let values1: Vec<f64> = (1..=50).map(|i| i as f64).collect();
+        let values2: Vec<f64> = (51..=100).map(|i| i as f64).collect();
+
+        let dataset1 = make_float_dataset(values1);
+        let dataset2 = make_float_dataset(values2);
+
+        let sketch1 = DataSketch::from_dataset(&dataset1, SketchType::DDSketch).expect("sketch1");
+        let sketch2 = DataSketch::from_dataset(&dataset2, SketchType::DDSketch).expect("sketch2");
+
+        let merged = DataSketch::merge(&[sketch1, sketch2]).expect("merge");
+
+        assert_eq!(merged.row_count, 100);
+        assert_eq!(merged.sketch_type, SketchType::DDSketch);
+    }
+
+    #[test]
+    fn test_distributed_detector_severity_levels() {
+        // Create significantly different distributions to trigger different severity levels
+        let values1: Vec<f64> = (0..100).map(|i| i as f64).collect();
+        let values2: Vec<f64> = (0..100).map(|i| (i * 50) as f64).collect(); // 50x different
+
+        let dataset1 = make_float_dataset(values1);
+        let dataset2 = make_float_dataset(values2);
+
+        let detector = DistributedDriftDetector::new().with_threshold(0.01);
+        let sketch1 = detector.create_sketch(&dataset1).expect("sketch1");
+        let sketch2 = detector.create_sketch(&dataset2).expect("sketch2");
+
+        let results = detector.compare(&sketch1, &sketch2).expect("compare");
+        assert!(!results.is_empty());
+        // Should detect some level of drift
+        assert!(results[0].statistic > 0.0);
+    }
+
+    #[test]
+    fn test_data_sketch_add_dataset_int_types() {
+        // Test with Int32 and Int64 columns
+        use arrow::array::{Int32Array, Int64Array};
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("int32_col", DataType::Int32, false),
+            Field::new("int64_col", DataType::Int64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
+                Arc::new(Int64Array::from(vec![10i64, 20, 30, 40, 50])),
+            ],
+        )
+        .expect("batch");
+
+        let dataset = ArrowDataset::from_batch(batch).expect("dataset");
+        let sketch = DataSketch::from_dataset(&dataset, SketchType::TDigest).expect("sketch");
+
+        assert_eq!(sketch.row_count, 5);
+        assert!(sketch.tdigests.contains_key("int32_col"));
+        assert!(sketch.tdigests.contains_key("int64_col"));
+    }
+
+    #[test]
+    fn test_data_sketch_add_dataset_float32() {
+        use arrow::array::Float32Array;
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "float32_col",
+            DataType::Float32,
+            false,
+        )]));
+
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![Arc::new(Float32Array::from(vec![1.0f32, 2.0, 3.0, 4.0, 5.0]))],
+        )
+        .expect("batch");
+
+        let dataset = ArrowDataset::from_batch(batch).expect("dataset");
+        let sketch = DataSketch::from_dataset(&dataset, SketchType::TDigest).expect("sketch");
+
+        assert_eq!(sketch.row_count, 5);
+        assert!(sketch.tdigests.contains_key("float32_col"));
+    }
+
+    #[test]
+    fn test_data_sketch_non_numeric_columns_skipped() {
+        use arrow::array::StringArray;
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("value", DataType::Float64, false),
+            Field::new("name", DataType::Utf8, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0])),
+                Arc::new(StringArray::from(vec!["a", "b", "c"])),
+            ],
+        )
+        .expect("batch");
+
+        let dataset = ArrowDataset::from_batch(batch).expect("dataset");
+        let sketch = DataSketch::from_dataset(&dataset, SketchType::TDigest).expect("sketch");
+
+        // Only numeric column should be sketched
+        assert!(sketch.tdigests.contains_key("value"));
+        assert!(!sketch.tdigests.contains_key("name"));
+    }
+
+    #[test]
+    fn test_distributed_detector_compare_missing_column() {
+        // Test when one sketch has a column the other doesn't
+        let values1: Vec<f64> = (0..100).map(|i| i as f64).collect();
+        let dataset1 = make_float_dataset(values1);
+
+        let detector = DistributedDriftDetector::new();
+        let sketch1 = detector.create_sketch(&dataset1).expect("sketch1");
+
+        // Create empty sketch
+        let sketch2 = DataSketch::new(SketchType::TDigest);
+
+        let results = detector.compare(&sketch1, &sketch2).expect("compare");
+        // Should still produce results, even if quantiles are None
+        assert!(!results.is_empty());
+    }
 }

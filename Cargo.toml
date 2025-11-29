@@ -21,6 +21,7 @@ s3 = ["dep:aws-sdk-s3", "dep:aws-config", "tokio-runtime"]
 http = ["dep:reqwest"]
 hf-hub = ["http"]
 cli = ["dep:clap"]
+repl = ["cli", "dep:reedline", "dep:nu-ansi-term"]
 wasm = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:getrandom"]
 format-encryption = ["dep:aes-gcm", "dep:argon2", "dep:x25519-dalek", "dep:hkdf", "dep:sha2", "dep:rand_core", "dep:getrandom"]
 format-signing = ["dep:ed25519-dalek", "dep:getrandom"]
@@ -52,6 +53,10 @@ memmap2 = { version = "0.9", optional = true }
 
 # CLI (optional, not for WASM)
 clap = { version = "4", features = ["derive"], optional = true }
+
+# REPL (feature-gated)
+reedline = { version = "0.37", optional = true }
+nu-ansi-term = { version = "0.50", optional = true }
 
 # Async (feature-gated)
 tokio = { version = "1", features = ["rt", "fs", "sync", "rt-multi-thread"], optional = true }
@@ -90,6 +95,8 @@ tempfile = "3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.6"
+assert_cmd = "2"
+predicates = "3"
 
 [[bin]]
 name = "alimentar"

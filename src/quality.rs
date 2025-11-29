@@ -1623,6 +1623,7 @@ mod tests {
         for (target_score, expected_color) in grades_colors {
             // Create checklist that produces approximately the target score
             let target: f64 = target_score;
+            #[allow(clippy::cast_sign_loss)] // target is always positive (30.0-100.0)
             let passed = (target / 100.0 * 10.0).round() as usize;
             let failed = 10 - passed;
             let mut checklist: Vec<ChecklistItem> = (0..passed)
