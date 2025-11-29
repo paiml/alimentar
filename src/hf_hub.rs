@@ -375,6 +375,254 @@ pub struct DatasetInfo {
     pub description: Option<String>,
 }
 
+// ============================================================================
+// HuggingFace Hub Publisher (Upload Support)
+// ============================================================================
+
+/// HuggingFace Hub API URL for uploads
+const HF_API_URL: &str = "https://huggingface.co/api";
+
+/// Publisher for uploading datasets to HuggingFace Hub.
+///
+/// # Example
+///
+/// ```no_run
+/// use alimentar::hf_hub::HfPublisher;
+/// use arrow::record_batch::RecordBatch;
+///
+/// let publisher = HfPublisher::new("paiml/my-dataset")
+///     .with_token(std::env::var("HF_TOKEN").unwrap())
+///     .with_private(false);
+///
+/// // publisher.upload_parquet("train.parquet", &batch).unwrap();
+/// ```
+#[derive(Debug, Clone)]
+pub struct HfPublisher {
+    /// Repository ID (e.g., "paiml/depyler-citl")
+    repo_id: String,
+    /// HuggingFace API token
+    token: Option<String>,
+    /// Whether the dataset should be private
+    private: bool,
+    /// Commit message for uploads
+    commit_message: String,
+}
+
+impl HfPublisher {
+    /// Creates a new publisher for a HuggingFace dataset repository.
+    pub fn new(repo_id: impl Into<String>) -> Self {
+        Self {
+            repo_id: repo_id.into(),
+            token: std::env::var("HF_TOKEN").ok(),
+            private: false,
+            commit_message: "Upload via alimentar".to_string(),
+        }
+    }
+
+    /// Sets the HuggingFace API token.
+    pub fn with_token(mut self, token: impl Into<String>) -> Self {
+        self.token = Some(token.into());
+        self
+    }
+
+    /// Sets whether the dataset should be private.
+    pub fn with_private(mut self, private: bool) -> Self {
+        self.private = private;
+        self
+    }
+
+    /// Sets the commit message for uploads.
+    pub fn with_commit_message(mut self, message: impl Into<String>) -> Self {
+        self.commit_message = message.into();
+        self
+    }
+
+    /// Returns the repository ID.
+    pub fn repo_id(&self) -> &str {
+        &self.repo_id
+    }
+
+    /// Creates the dataset repository on HuggingFace Hub if it doesn't exist.
+    #[cfg(feature = "http")]
+    pub async fn create_repo(&self) -> Result<()> {
+        let token = self.token.as_ref().ok_or_else(|| {
+            Error::IO(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "HF_TOKEN required for upload",
+            ))
+        })?;
+
+        let client = reqwest::Client::new();
+        let url = format!("{}/repos/create", HF_API_URL);
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&serde_json::json!({
+                "type": "dataset",
+                "name": self.repo_id,
+                "private": self.private
+            }))
+            .send()
+            .await
+            .map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+
+        // 409 Conflict means repo already exists, which is fine
+        if response.status().is_success() || response.status().as_u16() == 409 {
+            Ok(())
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(Error::IO(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to create repo: {} - {}", status, body),
+            )))
+        }
+    }
+
+    /// Uploads a parquet file to the repository.
+    #[cfg(feature = "http")]
+    pub async fn upload_file(&self, path_in_repo: &str, data: &[u8]) -> Result<()> {
+        let token = self.token.as_ref().ok_or_else(|| {
+            Error::IO(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "HF_TOKEN required for upload",
+            ))
+        })?;
+
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/datasets/{}/upload/main/{}",
+            HF_HUB_URL, self.repo_id, path_in_repo
+        );
+
+        let response = client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/octet-stream")
+            .body(data.to_vec())
+            .send()
+            .await
+            .map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(Error::IO(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to upload: {} - {}", status, body),
+            )))
+        }
+    }
+
+    /// Uploads a RecordBatch as a parquet file.
+    #[cfg(feature = "http")]
+    pub async fn upload_batch(
+        &self,
+        path_in_repo: &str,
+        batch: &arrow::record_batch::RecordBatch,
+    ) -> Result<()> {
+        use parquet::arrow::ArrowWriter;
+
+        // Write batch to parquet in memory
+        let mut buffer = Vec::new();
+        {
+            let mut writer = ArrowWriter::try_new(&mut buffer, batch.schema(), None)
+                .map_err(|e| Error::Parquet(e.to_string()))?;
+            writer
+                .write(batch)
+                .map_err(|e| Error::Parquet(e.to_string()))?;
+            writer
+                .close()
+                .map_err(|e| Error::Parquet(e.to_string()))?;
+        }
+
+        self.upload_file(path_in_repo, &buffer).await
+    }
+
+    /// Uploads a local parquet file to the repository.
+    #[cfg(feature = "http")]
+    pub async fn upload_parquet_file(&self, local_path: &Path, path_in_repo: &str) -> Result<()> {
+        let data = std::fs::read(local_path)?;
+        self.upload_file(path_in_repo, &data).await
+    }
+
+    /// Synchronous wrapper for creating repo (for CLI use).
+    #[cfg(all(feature = "http", feature = "tokio-runtime"))]
+    pub fn create_repo_sync(&self) -> Result<()> {
+        tokio::runtime::Runtime::new()
+            .map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            .block_on(self.create_repo())
+    }
+
+    /// Synchronous wrapper for uploading file (for CLI use).
+    #[cfg(all(feature = "http", feature = "tokio-runtime"))]
+    pub fn upload_file_sync(&self, path_in_repo: &str, data: &[u8]) -> Result<()> {
+        tokio::runtime::Runtime::new()
+            .map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            .block_on(self.upload_file(path_in_repo, data))
+    }
+
+    /// Synchronous wrapper for uploading parquet file (for CLI use).
+    #[cfg(all(feature = "http", feature = "tokio-runtime"))]
+    pub fn upload_parquet_file_sync(&self, local_path: &Path, path_in_repo: &str) -> Result<()> {
+        tokio::runtime::Runtime::new()
+            .map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            .block_on(self.upload_parquet_file(local_path, path_in_repo))
+    }
+}
+
+/// Builder for HfPublisher with fluent interface.
+#[derive(Debug, Clone)]
+pub struct HfPublisherBuilder {
+    repo_id: String,
+    token: Option<String>,
+    private: bool,
+    commit_message: String,
+}
+
+impl HfPublisherBuilder {
+    /// Creates a new builder.
+    pub fn new(repo_id: impl Into<String>) -> Self {
+        Self {
+            repo_id: repo_id.into(),
+            token: None,
+            private: false,
+            commit_message: "Upload via alimentar".to_string(),
+        }
+    }
+
+    /// Sets the token.
+    pub fn token(mut self, token: impl Into<String>) -> Self {
+        self.token = Some(token.into());
+        self
+    }
+
+    /// Sets private flag.
+    pub fn private(mut self, private: bool) -> Self {
+        self.private = private;
+        self
+    }
+
+    /// Sets commit message.
+    pub fn commit_message(mut self, message: impl Into<String>) -> Self {
+        self.commit_message = message.into();
+        self
+    }
+
+    /// Builds the publisher.
+    pub fn build(self) -> HfPublisher {
+        HfPublisher {
+            repo_id: self.repo_id,
+            token: self.token.or_else(|| std::env::var("HF_TOKEN").ok()),
+            private: self.private,
+            commit_message: self.commit_message,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
