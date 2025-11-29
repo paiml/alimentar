@@ -277,7 +277,19 @@ fn path_to_module(base: &Path, path: &Path) -> String {
 }
 
 /// Detect if a line is prose continuation (documentation text) rather than code output.
-/// This is a Poka-Yoke to prevent prose contamination in expected output.
+/// This is a Poka-Yoke (mistake-proofing) to prevent prose contamination in expected output.
+///
+/// # Defense-in-Depth Algorithm (ALIM-R001 v2)
+///
+/// Signal priority order per Toyota Way / Jidoka principles:
+/// 1. **Early Exit**: Python exceptions (valid output, not prose)
+/// 2. **Strong Signal**: DOC_MARKERS (`:param`, `:return`, etc.)
+/// 3. **Strong Signal**: PROSE_STARTERS (`The `, `This `, `Note:`, etc.)
+/// 4. **Weak Signal**: Sentence structure heuristic (Capital + lowercase)
+///
+/// # References
+/// - [6] Hynes et al. (2017) "The Data Linter" NIPS Workshop on ML Systems
+/// - ALIM-SPEC-005: Data Quality Tooling Improvement Specification
 ///
 /// # Arguments
 /// * `line` - The line to check
@@ -286,77 +298,115 @@ fn path_to_module(base: &Path, path: &Path) -> String {
 /// `true` if the line appears to be prose/documentation, `false` if it looks like code output
 #[must_use]
 pub fn is_prose_continuation(line: &str) -> bool {
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Constants defined at top of function (clippy: items_after_statements)
+    // ═══════════════════════════════════════════════════════════════════════════
 
-    // Python exception lines: ErrorName: message (valid output, not prose)
-    // e.g., "ZeroDivisionError: division by zero", "UserWarning: deprecation"
-    // Must be PascalCase (not just "Warning" which is a prose indicator)
-    let first_word: &str = trimmed.split(|c: char| c == ':' || c.is_whitespace())
-        .next()
-        .unwrap_or("");
-    let is_python_exception = (first_word.ends_with("Error")
-        || first_word.ends_with("Exception")
-        || first_word.ends_with("Warning"))
-        && first_word.len() > 7  // Longer than just "Warning" or "Error"
-        && first_word.chars().filter(|c| c.is_uppercase()).count() >= 2;
-    if is_python_exception {
-        return false;
-    }
+    /// Docstring/ReStructuredText markers - unambiguous documentation indicators
+    const DOC_MARKERS: &[&str] = &[
+        ":param", ":return", ":raises", ":type", ":rtype",
+        ":arg", ":args:", ":keyword", ":ivar", ":cvar",
+    ];
 
-    // 1. Sentence pattern: Capital letter followed by lowercase (prose indicator)
-    let chars: Vec<char> = trimmed.chars().collect();
-    if chars.len() >= 2 && chars[0].is_uppercase() && chars[1].is_lowercase() {
-        // Python literals and error keywords that start with capital
-        if ["True", "False", "None", "Traceback"].contains(&first_word) {
-            return false;
-        }
-        // Single capitalized word might be a class name in output
-        if first_word.chars().all(|c| c.is_alphanumeric() || c == '_')
-           && trimmed.split_whitespace().count() == 1 {
-            return false;
-        }
-        // Multi-word sentence starting with capital = prose
-        // But only if it doesn't look like Python output
-        if trimmed.split_whitespace().count() > 2 {
-            // Check if it looks like code output (contains Python-like tokens)
-            // Note: "..." at end of sentence is ellipsis (prose), not continuation marker
-            if trimmed.contains(">>>") || trimmed.starts_with("...")
-               || trimmed.starts_with('<') || trimmed.starts_with('[')
-               || trimmed.starts_with('{') || trimmed.starts_with('(') {
-                return false;
-            }
-            return true;
-        }
-    }
-
-    // 2. Docstring markers (explicit signals)
-    let docstring_markers = [":param", ":return", ":raises", ":type", ":rtype",
-                            ":arg", ":args:", ":keyword", ":ivar", ":cvar"];
-    if docstring_markers.iter().any(|m| trimmed.starts_with(m)) {
-        return true;
-    }
-
-    // 3. Common prose starters (must not contain code-like content)
-    let prose_starters = [
+    /// Common prose starters (stop words) - code output rarely starts with these
+    const PROSE_STARTERS: &[&str] = &[
         "The ", "This ", "Note:", "Warning:", "Example:", "Examples:",
         "See ", "If ", "When ", "For ", "An ", "A ", "It ",
         "Returns ", "Raises ", "Args:", "Arguments:", "Parameters:",
         "By ", "Use ", "Set ", "Get ", "You ", "We ", "They ",
     ];
-    if prose_starters.iter().any(|s| trimmed.starts_with(s)) {
-        // Don't filter if it contains code-like content (e.g., "Type >>> to continue")
-        if trimmed.contains(">>>") || trimmed.contains("...") {
+
+    /// Python literals that start with capital letters but are not prose
+    const PYTHON_CONSTANTS: &[&str] = &["True", "False", "None", "Traceback"];
+
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // Extract first word for pattern matching
+    let first_word: &str = trimmed
+        .split(|c: char| c == ':' || c.is_whitespace())
+        .next()
+        .unwrap_or("");
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EARLY EXIT: Python exception lines (valid output, not prose)
+    // ═══════════════════════════════════════════════════════════════════════════
+    // e.g., "ZeroDivisionError: division by zero", "UserWarning: deprecation"
+    // Must be PascalCase (not just "Warning" which is a prose indicator)
+    let is_python_exception = (first_word.ends_with("Error")
+        || first_word.ends_with("Exception")
+        || first_word.ends_with("Warning"))
+        && first_word.len() > 7 // Longer than just "Warning" or "Error"
+        && first_word.chars().filter(|c| c.is_uppercase()).count() >= 2;
+    if is_python_exception {
+        return false;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STRONG SIGNAL 1: Docstring/ReStructuredText markers (explicit signals)
+    // ═══════════════════════════════════════════════════════════════════════════
+    if DOC_MARKERS.iter().any(|m| trimmed.starts_with(m)) {
+        return true;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STRONG SIGNAL 2: Common prose starters (stop words)
+    // ═══════════════════════════════════════════════════════════════════════════
+    if PROSE_STARTERS.iter().any(|s| trimmed.starts_with(s)) {
+        // Exception: Don't filter if it contains code-like content
+        // e.g., "Type >>> to continue" - but allow trailing ellipsis (e.g., "If you...")
+        if trimmed.contains(">>>") {
             return false;
         }
         return true;
     }
 
-    // 4. Sphinx/reStructuredText markers
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EXCLUSION: Sphinx/reStructuredText code blocks
+    // ═══════════════════════════════════════════════════════════════════════════
     if trimmed.starts_with(".. ") || trimmed.starts_with(">>>") {
         return false; // These are code-related
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WEAK SIGNAL: Sentence structure heuristic (last resort)
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Pattern: Capital letter -> Lowercase letter -> ... -> End with punctuation
+    // We carefully exclude Python constants like True/False/None.
+    let chars: Vec<char> = trimmed.chars().collect();
+    if chars.len() >= 2 && chars[0].is_uppercase() && chars[1].is_lowercase() {
+        // Python literals and error keywords that start with capital
+        if PYTHON_CONSTANTS.contains(&first_word) {
+            return false;
+        }
+
+        // Single capitalized word might be a class name in output
+        if first_word.chars().all(|c| c.is_alphanumeric() || c == '_')
+            && trimmed.split_whitespace().count() == 1
+        {
+            return false;
+        }
+
+        // Multi-word sentence starting with capital = likely prose
+        // But only if it doesn't look like Python output
+        if trimmed.split_whitespace().count() > 2 {
+            // Check if it looks like code output (contains Python-like tokens)
+            // Note: "..." at end of sentence is ellipsis (prose), not continuation marker
+            if trimmed.contains(">>>")
+                || trimmed.starts_with("...")
+                || trimmed.starts_with('<')
+                || trimmed.starts_with('[')
+                || trimmed.starts_with('{')
+                || trimmed.starts_with('(')
+            {
+                return false;
+            }
+            return true;
+        }
     }
 
     false
