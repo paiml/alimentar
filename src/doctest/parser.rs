@@ -10,12 +10,25 @@ use walkdir::WalkDir;
 use super::{DocTest, DocTestCorpus};
 use crate::Result;
 
+/// Context for a function/class definition including signature.
+#[derive(Debug, Clone)]
+struct DefContext {
+    /// Indentation level
+    indent: usize,
+    /// Function/class name
+    name: String,
+    /// Is this a class (vs function)?
+    is_class: bool,
+    /// Full signature for functions (e.g., "def foo(a: int, b: str) -> bool")
+    signature: Option<String>,
+}
+
 /// Parser for extracting Python doctests from source files.
 #[derive(Debug)]
 pub struct DocTestParser {
     /// Regex for finding docstrings
     docstring_re: Regex,
-    /// Regex for finding function/class definitions
+    /// Regex for finding function/class definitions with signature
     def_re: Regex,
 }
 
@@ -38,8 +51,11 @@ impl DocTestParser {
             // Match triple-quoted strings (""" only - most common for docstrings)
             // Can't use backreferences in Rust regex, so we match """ ... """ directly
             docstring_re: Regex::new(r#"(?s)"""(.*?)""""#).expect("valid regex"),
-            // Match def/class definitions to get function names
-            def_re: Regex::new(r"(?m)^(\s*)(def|class)\s+(\w+)").expect("valid regex"),
+            // Match def/class definitions with full signature
+            // Groups: 1=indent, 2=def/class, 3=name, 4=params+return (optional)
+            // Example: "def foo(a: int, b: str) -> bool:" captures "(a: int, b: str) -> bool"
+            def_re: Regex::new(r"(?m)^(\s*)(def|class)\s+(\w+)(\([^)]*\)(?:\s*->\s*[^:]+)?)?")
+                .expect("valid regex"),
         }
     }
 
@@ -53,26 +69,36 @@ impl DocTestParser {
         let mut results = Vec::new();
         let lines: Vec<&str> = source.lines().collect();
 
-        // Build a map of line number -> (indent, name, is_class)
-        let mut context_map: Vec<Option<(usize, String, bool)>> = vec![None; lines.len()];
-        let mut context_stack: Vec<(usize, String, bool)> = Vec::new();
+        // Build a map of line number -> DefContext (with signature)
+        let mut context_map: Vec<Option<DefContext>> = vec![None; lines.len()];
+        let mut context_stack: Vec<DefContext> = Vec::new();
 
         for (i, line) in lines.iter().enumerate() {
             if let Some(caps) = self.def_re.captures(line) {
                 let indent = caps.get(1).map_or(0, |m| m.as_str().len());
                 let kind = caps.get(2).map_or("", |m| m.as_str());
                 let name = caps.get(3).map_or("", |m| m.as_str()).to_string();
+                let params = caps.get(4).map(|m| m.as_str().to_string());
                 let is_class = kind == "class";
 
+                // Build full signature for functions (not classes)
+                let signature = if !is_class {
+                    params.map(|p| format!("def {name}{p}"))
+                } else {
+                    None
+                };
+
                 // Pop contexts with same or greater indent
-                while context_stack
-                    .last()
-                    .is_some_and(|(ctx_indent, _, _)| *ctx_indent >= indent)
-                {
+                while context_stack.last().is_some_and(|ctx| ctx.indent >= indent) {
                     context_stack.pop();
                 }
 
-                context_stack.push((indent, name, is_class));
+                context_stack.push(DefContext {
+                    indent,
+                    name,
+                    is_class,
+                    signature,
+                });
             }
 
             // Store current context for this line
@@ -90,49 +116,57 @@ impl DocTestParser {
             let start_byte = docstring_match.start();
             let line_num = source[..start_byte].matches('\n').count();
 
-            // Determine the function name from context
-            let function_name = Self::get_function_name(line_num, &context_map, &lines);
+            // Determine the function name and signature from context
+            let (function_name, signature) =
+                Self::get_function_context(line_num, &context_map, &lines);
 
-            // Extract doctests from this docstring
-            let doctests = Self::extract_from_docstring(content, module, &function_name);
+            // Extract doctests from this docstring (with signature)
+            let doctests =
+                Self::extract_from_docstring_with_sig(content, module, &function_name, signature);
             results.extend(doctests);
         }
 
         results
     }
 
-    /// Get the function name for a docstring at the given line.
-    fn get_function_name(
+    /// Get the function name and signature for a docstring at the given line.
+    /// Returns (function_name, Option<signature>).
+    fn get_function_context(
         line_num: usize,
-        context_map: &[Option<(usize, String, bool)>],
+        context_map: &[Option<DefContext>],
         lines: &[&str],
-    ) -> String {
+    ) -> (String, Option<String>) {
         // Check if there's a def/class on this line or the previous line
         if line_num < lines.len() {
             // Look at current context
-            if let Some((_, ref name, is_class)) = context_map.get(line_num).and_then(|c| c.clone())
-            {
+            if let Some(ctx) = context_map.get(line_num).and_then(|c| c.clone()) {
                 // Check if we're inside a class method
-                if !is_class {
+                if !ctx.is_class {
                     // It's a function - check if it's inside a class
                     for i in (0..line_num).rev() {
-                        if let Some((_, ref class_name, true)) =
-                            context_map.get(i).and_then(|c| c.clone())
-                        {
-                            return format!("{class_name}.{name}");
+                        if let Some(class_ctx) = context_map.get(i).and_then(|c| c.clone()) {
+                            if class_ctx.is_class {
+                                let full_name = format!("{}.{}", class_ctx.name, ctx.name);
+                                return (full_name, ctx.signature);
+                            }
                         }
                     }
                 }
-                return name.clone();
+                return (ctx.name.clone(), ctx.signature);
             }
         }
 
         // Module-level docstring
-        "__module__".to_string()
+        ("__module__".to_string(), None)
     }
 
-    /// Extract doctests from a docstring's content.
-    fn extract_from_docstring(content: &str, module: &str, function: &str) -> Vec<DocTest> {
+    /// Extract doctests from a docstring's content (with signature).
+    fn extract_from_docstring_with_sig(
+        content: &str,
+        module: &str,
+        function: &str,
+        signature: Option<String>,
+    ) -> Vec<DocTest> {
         let mut results = Vec::new();
         let lines: Vec<&str> = content.lines().collect();
         let mut i = 0;
@@ -213,13 +247,24 @@ impl DocTestParser {
                 let input = input_lines.join("\n");
                 let expected = expected_lines.join("\n");
 
-                results.push(DocTest::new(module, function, input, expected));
+                // Create DocTest with signature if available
+                let mut doctest = DocTest::new(module, function, input, expected);
+                if let Some(ref sig) = signature {
+                    doctest = doctest.with_signature(sig.clone());
+                }
+                results.push(doctest);
             } else {
                 i += 1;
             }
         }
 
         results
+    }
+
+    /// Extract doctests from a docstring's content (legacy, no signature).
+    #[allow(dead_code)]
+    fn extract_from_docstring(content: &str, module: &str, function: &str) -> Vec<DocTest> {
+        Self::extract_from_docstring_with_sig(content, module, function, None)
     }
 
     /// Extract doctests from a Python file.
@@ -558,6 +603,63 @@ def foo():
         assert_eq!(doctests.len(), 2);
         assert_eq!(doctests[0].input, ">>> x = (\n...     1 + 2\n... )");
         assert_eq!(doctests[0].expected, "");
+    }
+
+    #[test]
+    fn test_extract_signature() {
+        let parser = DocTestParser::new();
+        let source = r#"
+def add(a: int, b: int) -> int:
+    """Add two numbers.
+
+    >>> add(1, 2)
+    3
+    """
+    return a + b
+"#;
+        let doctests = parser.parse_source(source, "math");
+        assert_eq!(doctests.len(), 1);
+        assert_eq!(doctests[0].function, "add");
+        assert_eq!(
+            doctests[0].signature,
+            Some("def add(a: int, b: int) -> int".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_signature_no_return_type() {
+        let parser = DocTestParser::new();
+        let source = r#"
+def greet(name: str):
+    """Greet someone.
+
+    >>> greet("world")
+    'Hello, world!'
+    """
+    return f"Hello, {name}!"
+"#;
+        let doctests = parser.parse_source(source, "hello");
+        assert_eq!(doctests.len(), 1);
+        assert_eq!(
+            doctests[0].signature,
+            Some("def greet(name: str)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_module_doctest_no_signature() {
+        let parser = DocTestParser::new();
+        let source = r#"
+"""Module docstring.
+
+>>> 1 + 1
+2
+"""
+"#;
+        let doctests = parser.parse_source(source, "mymodule");
+        assert_eq!(doctests.len(), 1);
+        assert_eq!(doctests[0].function, "__module__");
+        assert!(doctests[0].signature.is_none());
     }
 
     // ========== Property Tests (50 cases for fast CI) ==========
