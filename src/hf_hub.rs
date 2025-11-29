@@ -420,18 +420,21 @@ impl HfPublisher {
     }
 
     /// Sets the HuggingFace API token.
+    #[must_use]
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
         self
     }
 
     /// Sets whether the dataset should be private.
+    #[must_use]
     pub fn with_private(mut self, private: bool) -> Self {
         self.private = private;
         self
     }
 
     /// Sets the commit message for uploads.
+    #[must_use]
     pub fn with_commit_message(mut self, message: impl Into<String>) -> Self {
         self.commit_message = message.into();
         self
@@ -465,7 +468,7 @@ impl HfPublisher {
             }))
             .send()
             .await
-            .map_err(|e| Error::io_no_path(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?;
 
         // 409 Conflict means repo already exists, which is fine
         if response.status().is_success() || response.status().as_u16() == 409 {
@@ -473,10 +476,10 @@ impl HfPublisher {
         } else {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            Err(Error::io_no_path(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create repo: {} - {}", status, body),
-            )))
+            Err(Error::io_no_path(std::io::Error::other(format!(
+                "Failed to create repo: {} - {}",
+                status, body
+            ))))
         }
     }
 
@@ -503,17 +506,17 @@ impl HfPublisher {
             .body(data.to_vec())
             .send()
             .await
-            .map_err(|e| Error::io_no_path(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?;
 
         if response.status().is_success() {
             Ok(())
         } else {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            Err(Error::io_no_path(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to upload: {} - {}", status, body),
-            )))
+            Err(Error::io_no_path(std::io::Error::other(format!(
+                "Failed to upload: {} - {}",
+                status, body
+            ))))
         }
     }
 
@@ -553,7 +556,7 @@ impl HfPublisher {
     #[cfg(all(feature = "http", feature = "tokio-runtime"))]
     pub fn create_repo_sync(&self) -> Result<()> {
         tokio::runtime::Runtime::new()
-            .map_err(|e| Error::io_no_path(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?
             .block_on(self.create_repo())
     }
 
@@ -561,7 +564,7 @@ impl HfPublisher {
     #[cfg(all(feature = "http", feature = "tokio-runtime"))]
     pub fn upload_file_sync(&self, path_in_repo: &str, data: &[u8]) -> Result<()> {
         tokio::runtime::Runtime::new()
-            .map_err(|e| Error::io_no_path(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?
             .block_on(self.upload_file(path_in_repo, data))
     }
 
@@ -569,7 +572,7 @@ impl HfPublisher {
     #[cfg(all(feature = "http", feature = "tokio-runtime"))]
     pub fn upload_parquet_file_sync(&self, local_path: &Path, path_in_repo: &str) -> Result<()> {
         tokio::runtime::Runtime::new()
-            .map_err(|e| Error::io_no_path(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?
             .block_on(self.upload_parquet_file(local_path, path_in_repo))
     }
 
@@ -591,7 +594,7 @@ impl HfPublisher {
     #[cfg(all(feature = "http", feature = "tokio-runtime"))]
     pub fn upload_readme_validated_sync(&self, content: &str) -> Result<()> {
         tokio::runtime::Runtime::new()
-            .map_err(|e| Error::io_no_path(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+            .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?
             .block_on(self.upload_readme_validated(content))
     }
 }
@@ -617,18 +620,21 @@ impl HfPublisherBuilder {
     }
 
     /// Sets the token.
+    #[must_use]
     pub fn token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
         self
     }
 
     /// Sets private flag.
+    #[must_use]
     pub fn private(mut self, private: bool) -> Self {
         self.private = private;
         self
     }
 
     /// Sets commit message.
+    #[must_use]
     pub fn commit_message(mut self, message: impl Into<String>) -> Self {
         self.commit_message = message.into();
         self
@@ -747,13 +753,13 @@ impl std::fmt::Display for ValidationError {
 /// ```
 /// use alimentar::hf_hub::DatasetCardValidator;
 ///
-/// let readme = r#"---
+/// let readme = r"---
 /// license: mit
 /// task_categories:
 ///   - translation
 /// ---
 /// # My Dataset
-/// "#;
+/// ";
 ///
 /// let errors = DatasetCardValidator::validate_readme(readme);
 /// assert!(errors.is_empty());
@@ -878,20 +884,16 @@ impl DatasetCardValidator {
 
         let mut dp = vec![vec![0; n + 1]; m + 1];
 
-        for (i, item) in dp.iter_mut().enumerate().take(m + 1) {
-            item[0] = i;
+        for (i, row) in dp.iter_mut().enumerate().take(m + 1) {
+            row[0] = i;
         }
-        for j in 0..=n {
-            dp[0][j] = j;
+        for (j, cell) in dp[0].iter_mut().enumerate().take(n + 1) {
+            *cell = j;
         }
 
         for i in 1..=m {
             for j in 1..=n {
-                let cost = if a_chars[i - 1] == b_chars[j - 1] {
-                    0
-                } else {
-                    1
-                };
+                let cost = usize::from(a_chars[i - 1] != b_chars[j - 1]);
                 dp[i][j] = (dp[i - 1][j] + 1)
                     .min(dp[i][j - 1] + 1)
                     .min(dp[i - 1][j - 1] + cost);
@@ -1337,7 +1339,7 @@ mod tests {
 
     #[test]
     fn test_validate_valid_readme() {
-        let readme = r#"---
+        let readme = r"---
 license: mit
 task_categories:
   - translation
@@ -1345,20 +1347,20 @@ language:
   - en
 ---
 # My Dataset
-"#;
+";
         let errors = DatasetCardValidator::validate_readme(readme);
         assert!(errors.is_empty());
     }
 
     #[test]
     fn test_validate_invalid_task_category() {
-        let readme = r#"---
+        let readme = r"---
 license: mit
 task_categories:
   - text2text-generation
 ---
 # My Dataset
-"#;
+";
         let errors = DatasetCardValidator::validate_readme(readme);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].field, "task_categories");
@@ -1369,35 +1371,35 @@ task_categories:
 
     #[test]
     fn test_validate_multiple_invalid_categories() {
-        let readme = r#"---
+        let readme = r"---
 task_categories:
   - text2text-generation
   - image-generation
 ---
-"#;
+";
         let errors = DatasetCardValidator::validate_readme(readme);
         assert_eq!(errors.len(), 2);
     }
 
     #[test]
     fn test_validate_valid_size_category() {
-        let readme = r#"---
+        let readme = r"---
 size_categories:
   - n<1K
   - 1K<n<10K
 ---
-"#;
+";
         let errors = DatasetCardValidator::validate_readme(readme);
         assert!(errors.is_empty());
     }
 
     #[test]
     fn test_validate_invalid_size_category() {
-        let readme = r#"---
+        let readme = r"---
 size_categories:
   - small
 ---
-"#;
+";
         let errors = DatasetCardValidator::validate_readme(readme);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].field, "size_categories");
@@ -1419,11 +1421,11 @@ size_categories:
 
     #[test]
     fn test_validate_strict_returns_error() {
-        let readme = r#"---
+        let readme = r"---
 task_categories:
   - invalid-category
 ---
-"#;
+";
         let result = DatasetCardValidator::validate_readme_strict(readme);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -1432,12 +1434,12 @@ task_categories:
 
     #[test]
     fn test_validate_strict_returns_ok() {
-        let readme = r#"---
+        let readme = r"---
 task_categories:
   - translation
   - text-classification
 ---
-"#;
+";
         let result = DatasetCardValidator::validate_readme_strict(readme);
         assert!(result.is_ok());
     }
@@ -1491,11 +1493,7 @@ task_categories:
     fn test_all_valid_categories_pass() {
         for cat in VALID_TASK_CATEGORIES {
             let readme = format!(
-                r#"---
-task_categories:
-  - {}
----
-"#,
+                "---\ntask_categories:\n  - {}\n---\n",
                 cat
             );
             let errors = DatasetCardValidator::validate_readme(&readme);
@@ -1507,11 +1505,7 @@ task_categories:
     fn test_all_valid_size_categories_pass() {
         for size in VALID_SIZE_CATEGORIES {
             let readme = format!(
-                r#"---
-size_categories:
-  - {}
----
-"#,
+                "---\nsize_categories:\n  - {}\n---\n",
                 size
             );
             let errors = DatasetCardValidator::validate_readme(&readme);
