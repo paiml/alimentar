@@ -426,7 +426,7 @@ mod tests {
     fn test_iris_sepal_length_range() {
         let (sepal_length, _, _, _, _) = iris_data();
         for &val in &sepal_length {
-            assert!(val >= 4.0 && val <= 8.0, "Sepal length {} out of typical range", val);
+            assert!((4.0..=8.0).contains(&val), "Sepal length {} out of typical range", val);
         }
     }
 
@@ -434,7 +434,7 @@ mod tests {
     fn test_iris_sepal_width_range() {
         let (_, sepal_width, _, _, _) = iris_data();
         for &val in &sepal_width {
-            assert!(val >= 2.0 && val <= 5.0, "Sepal width {} out of typical range", val);
+            assert!((2.0..=5.0).contains(&val), "Sepal width {} out of typical range", val);
         }
     }
 

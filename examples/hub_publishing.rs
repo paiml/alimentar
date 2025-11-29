@@ -1,11 +1,11 @@
-//! HuggingFace Hub Publishing Example with Quality Validation
+//! `HuggingFace` Hub Publishing Example with Quality Validation
 //!
 //! This example demonstrates the CRITICAL importance of data quality
-//! validation before publishing to HuggingFace Hub.
+//! validation before publishing to `HuggingFace` Hub.
 //!
 //! # WARNING: Data Quality is NON-NEGOTIABLE
 //!
-//! Publishing low-quality datasets to HuggingFace is HARMFUL:
+//! Publishing low-quality datasets to `HuggingFace` is HARMFUL:
 //! - Models learn incorrect patterns from garbage data
 //! - Compute resources wasted on training with bad data
 //! - Downstream models inherit quality problems
@@ -53,7 +53,7 @@ fn main() {
         println!("╔══════════════════════════════════════════════════════════════════╗");
         println!("║                    ⛔ UPLOAD BLOCKED ⛔                          ║");
         println!("╠══════════════════════════════════════════════════════════════════╣");
-        println!("║  Quality score {:.1}% is below minimum threshold of {}%          ║", quality_score, MIN_QUALITY_SCORE);
+        println!("║  Quality score {quality_score:.1}% is below minimum threshold of {MIN_QUALITY_SCORE}%          ║");
         println!("║                                                                  ║");
         println!("║  FIX YOUR DATA BEFORE PUBLISHING:                                ║");
         println!("║                                                                  ║");
@@ -85,9 +85,9 @@ fn main() {
     println!();
 
     // This is where actual upload would happen
-    println!("Would upload to: {}", repo_id);
-    println!("  - Parquet file: {}", parquet_path);
-    println!("  - README.md with quality score: {:.1}%", quality_score);
+    println!("Would upload to: {repo_id}");
+    println!("  - Parquet file: {parquet_path}");
+    println!("  - README.md with quality score: {quality_score:.1}%");
     println!();
 
     print_upload_command(parquet_path, repo_id);
@@ -100,7 +100,7 @@ fn main() {
 
 /// Simulates quality check - replace with actual alimentar quality API
 fn simulate_quality_check(path: &str) -> f64 {
-    println!("Checking quality of: {}", path);
+    println!("Checking quality of: {path}");
     println!();
 
     // In real code, use alimentar's quality API:
@@ -119,11 +119,14 @@ fn simulate_quality_check(path: &str) -> f64 {
     let mut total = 0.0;
     for (name, score, detail) in &checks {
         let status = if *score >= 90.0 { "✓" } else if *score >= 70.0 { "⚠" } else { "✗" };
-        println!("  {} {}: {:.0}% - {}", status, name, score, detail);
+        println!("  {status} {name}: {score:.0}% - {detail}");
         total += score;
     }
 
-    total / checks.len() as f64
+    #[allow(clippy::cast_precision_loss)]
+    {
+        total / checks.len() as f64
+    }
 }
 
 /// Print quality report with grade
@@ -196,7 +199,7 @@ Apache 2.0
     )
 }
 
-/// Validate README against HuggingFace requirements
+/// Validate README against `HuggingFace` requirements
 fn validate_readme(content: &str) {
     println!("Validating dataset card...");
 
@@ -210,7 +213,7 @@ fn validate_readme(content: &str) {
 
     for (name, passed) in &checks {
         let status = if *passed { "✓" } else { "✗" };
-        println!("  {} {}", status, name);
+        println!("  {status} {name}");
     }
 
     // In real code, use alimentar's validator:
@@ -225,7 +228,7 @@ fn print_upload_command(parquet_path: &str, repo_id: &str) {
     println!("  export HF_TOKEN=\"hf_xxxxx\"");
     println!();
     println!("  # Upload with quality-validated README");
-    println!("  alimentar hub push {} {} \\", parquet_path, repo_id);
+    println!("  alimentar hub push {parquet_path} {repo_id} \\");
     println!("    --readme README.md \\");
     println!("    --message \"Quality-validated upload\"");
 }
@@ -275,9 +278,8 @@ fn print_quality_recipes() {
 mod chrono {
     pub struct Utc;
     impl Utc {
-        pub fn now() -> Self { Utc }
-    }
-    impl Utc {
+        pub fn now() -> Self { Self }
+        #[allow(clippy::unused_self)]
         pub fn format(&self, _: &str) -> &'static str { "2025-11-29" }
     }
 }

@@ -1143,7 +1143,7 @@ mod tests {
     #[test]
     fn test_confidence_calculation_ranges() {
         // Test various autocorrelation ranges for confidence
-        let analysis_high = EntropyAnalysis {
+        let _analysis_high = EntropyAnalysis {
             columns: vec![],
             overall_lsb_entropy: 0.9,
             overall_autocorrelation: 0.95, // Very high

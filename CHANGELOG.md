@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2025-11-29
+
+### Added
+- `DatasetCardValidator` utility methods: `is_valid_task_category()`, `is_valid_license()`, `is_valid_size_category()`, `suggest_task_category()`
+- Native HuggingFace Hub upload API with `HfHubUploader`
+- Abstract quality profile system for configurable quality scoring
+- 100-point weighted quality scoring system with grade calculation
+- Function signature extraction in doctest parser
+- REPL module with command parsing and tab completion
+- Doctest extraction from Python source files
+
+### Fixed
+- Handle nullable columns in constant check quality validation
+- Clippy lint warnings across codebase
+- Duplicate `DatasetCardValidator` struct definitions
+
+### Changed
+- Test suite expanded from 571 to 1648 tests
+- Test coverage improved to 92.10%
+
+## [0.2.0] - 2025-11-27
+
+### Added
+- REPL command interface with session management
+- Quality scoring profiles (ML training, doctest corpus)
+- Drift detection CLI commands
+- Federated learning split strategies
+
 ## [0.1.0] - 2025-11-26
 
 ### Added
@@ -31,5 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature flags for optional dependencies (s3, http, hf-hub, wasm)
 - Comprehensive test suite with 571 tests
 
-[Unreleased]: https://github.com/paiml/alimentar/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/paiml/alimentar/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/paiml/alimentar/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/paiml/alimentar/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/paiml/alimentar/releases/tag/v0.1.0

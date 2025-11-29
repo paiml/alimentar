@@ -1,7 +1,7 @@
 //! REPL Health Status (Andon) Demo
 //!
 //! Demonstrates the Toyota Way Andon-style health indicators.
-//! Run: cargo run --example repl_health_status --features repl
+//! Run: cargo run --example `repl_health_status` --features repl
 
 #[cfg(feature = "repl")]
 fn main() {
@@ -21,7 +21,7 @@ fn main() {
             HealthStatus::Critical => "Critical (red)",
             HealthStatus::None => "Unknown",
         };
-        println!("  Grade '{}' => {:?} {} - {}", grade, status, indicator, desc);
+        println!("  Grade '{grade}' => {status:?} {indicator} - {desc}");
     }
 
     // Visual indicators
@@ -46,11 +46,10 @@ fn main() {
         let suffix = if indicator.is_empty() {
             String::new()
         } else {
-            format!(" {}", indicator)
+            format!(" {indicator}")
         };
         println!(
-            "  Score: {:3} | Grade: {} | Status: {:?}{}",
-            score, grade, status, suffix
+            "  Score: {score:3} | Grade: {grade} | Status: {status:?}{suffix}"
         );
     }
 

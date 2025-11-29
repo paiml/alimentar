@@ -1,11 +1,11 @@
 //! REPL Session Management Demo
 //!
 //! Demonstrates session state, history, and export functionality.
-//! Run: cargo run --example repl_session --features repl
+//! Run: `cargo run --example repl_session --features repl`
 
 #[cfg(feature = "repl")]
 fn main() {
-    use alimentar::repl::{ReplSession, CommandParser};
+    use alimentar::repl::ReplSession;
 
     println!("=== REPL Session Demo ===\n");
 
@@ -30,7 +30,7 @@ fn main() {
 
     for cmd in &commands {
         session.add_history(cmd);
-        println!("  Added: {}", cmd);
+        println!("  Added: {cmd}");
     }
 
     // Show history
@@ -43,7 +43,7 @@ fn main() {
     println!("\n--- Exported Script ---");
     let script = session.export_history();
     for line in script.lines().take(15) {
-        println!("{}", line);
+        println!("{line}");
     }
 
     // Column completion context

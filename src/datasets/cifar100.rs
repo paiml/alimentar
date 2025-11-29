@@ -416,7 +416,7 @@ mod tests {
             .unwrap();
         for i in 0..label_col.len() {
             let label = label_col.value(i);
-            assert!(label >= 0 && label < 100, "Fine label {} out of range", label);
+            assert!((0..100).contains(&label), "Fine label {} out of range", label);
         }
     }
 
@@ -431,7 +431,7 @@ mod tests {
             .unwrap();
         for i in 0..label_col.len() {
             let label = label_col.value(i);
-            assert!(label >= 0 && label < 20, "Coarse label {} out of range", label);
+            assert!((0..20).contains(&label), "Coarse label {} out of range", label);
         }
     }
 
@@ -482,10 +482,10 @@ mod tests {
     fn test_embedded_cifar100_sample_labels_valid() {
         let (_, fine_labels, coarse_labels) = embedded_cifar100_sample();
         for (i, &fine) in fine_labels.iter().enumerate() {
-            assert!(fine >= 0 && fine < 100, "Fine label {} at {} out of range", fine, i);
+            assert!((0..100).contains(&fine), "Fine label {} at {} out of range", fine, i);
         }
         for (i, &coarse) in coarse_labels.iter().enumerate() {
-            assert!(coarse >= 0 && coarse < 20, "Coarse label {} at {} out of range", coarse, i);
+            assert!((0..20).contains(&coarse), "Coarse label {} at {} out of range", coarse, i);
         }
     }
 }

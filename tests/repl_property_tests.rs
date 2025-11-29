@@ -48,7 +48,7 @@ proptest! {
     /// Property: Head command with valid numbers parses correctly
     #[test]
     fn prop_head_with_number(n in 1usize..10000) {
-        let cmd = format!("head {}", n);
+        let cmd = format!("head {n}");
         let result = CommandParser::parse(&cmd);
         prop_assert!(result.is_ok());
         if let Ok(ReplCommand::Head { n: parsed_n }) = result {
@@ -80,7 +80,7 @@ proptest! {
     /// Property: Convert command only accepts valid formats
     #[test]
     fn prop_convert_valid_formats(format in "(csv|parquet|json)") {
-        let cmd = format!("convert {}", format);
+        let cmd = format!("convert {format}");
         let result = CommandParser::parse(&cmd);
         prop_assert!(result.is_ok());
     }
@@ -89,7 +89,7 @@ proptest! {
     #[test]
     fn prop_convert_invalid_formats(format in "[a-z]{1,10}") {
         if format != "csv" && format != "parquet" && format != "json" {
-            let cmd = format!("convert {}", format);
+            let cmd = format!("convert {format}");
             let result = CommandParser::parse(&cmd);
             prop_assert!(result.is_err());
         }
@@ -109,7 +109,7 @@ proptest! {
     /// Property: Load requires a path argument
     #[test]
     fn prop_load_requires_path(path in "[a-zA-Z0-9_/.]{1,50}") {
-        let cmd = format!("load {}", path);
+        let cmd = format!("load {path}");
         let result = CommandParser::parse(&cmd);
         prop_assert!(result.is_ok());
         if let Ok(ReplCommand::Load { path: parsed }) = result {
@@ -120,7 +120,7 @@ proptest! {
     /// Property: Use requires a dataset name
     #[test]
     fn prop_use_requires_name(name in "[a-zA-Z0-9_]{1,20}") {
-        let cmd = format!("use {}", name);
+        let cmd = format!("use {name}");
         let result = CommandParser::parse(&cmd);
         prop_assert!(result.is_ok());
         if let Ok(ReplCommand::Use { name: parsed }) = result {
@@ -131,7 +131,7 @@ proptest! {
     /// Property: Drift detect requires a reference file
     #[test]
     fn prop_drift_requires_reference(reference in "[a-zA-Z0-9_/.]{1,50}") {
-        let cmd = format!("drift detect {}", reference);
+        let cmd = format!("drift detect {reference}");
         let result = CommandParser::parse(&cmd);
         prop_assert!(result.is_ok());
         if let Ok(ReplCommand::DriftDetect { reference: parsed }) = result {
@@ -260,13 +260,13 @@ fn valid_command_strategy() -> impl Strategy<Value = String> {
         Just("quality score".to_string()),
         Just("history".to_string()),
         Just("history --export".to_string()),
-        (1usize..100).prop_map(|n| format!("head {}", n)),
-        "[a-zA-Z0-9_/.]{1,20}".prop_map(|p| format!("load {}", p)),
-        "[a-zA-Z0-9_]{1,10}".prop_map(|n| format!("use {}", n)),
-        "(csv|parquet|json)".prop_map(|f| format!("convert {}", f)),
-        "[a-zA-Z0-9_/.]{1,20}".prop_map(|r| format!("drift detect {}", r)),
-        "[a-zA-Z0-9_/.]{1,20}".prop_map(|s| format!("validate --schema {}", s)),
-        "(quality|drift|export)".prop_map(|t| format!("help {}", t)),
+        (1usize..100).prop_map(|n| format!("head {n}")),
+        "[a-zA-Z0-9_/.]{1,20}".prop_map(|p| format!("load {p}")),
+        "[a-zA-Z0-9_]{1,10}".prop_map(|n| format!("use {n}")),
+        "(csv|parquet|json)".prop_map(|f| format!("convert {f}")),
+        "[a-zA-Z0-9_/.]{1,20}".prop_map(|r| format!("drift detect {r}")),
+        "[a-zA-Z0-9_/.]{1,20}".prop_map(|s| format!("validate --schema {s}")),
+        "(quality|drift|export)".prop_map(|t| format!("help {t}")),
     ]
 }
 
