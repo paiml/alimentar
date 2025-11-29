@@ -19,7 +19,7 @@ provenance = ["dep:sha2"]
 tokio-runtime = ["dep:tokio"]
 s3 = ["dep:aws-sdk-s3", "dep:aws-config", "tokio-runtime"]
 http = ["dep:reqwest"]
-hf-hub = ["http"]
+hf-hub = ["http", "dep:base64", "dep:hex", "dep:sha2"]
 cli = ["dep:clap"]
 repl = ["cli", "dep:reedline", "dep:nu-ansi-term"]
 wasm = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:getrandom"]
@@ -66,7 +66,9 @@ aws-sdk-s3 = { version = "1", optional = true }
 aws-config = { version = "1", optional = true }
 
 # HTTP (feature-gated)
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json", "multipart"], optional = true }
+base64 = { version = "0.22", optional = true }
+hex = { version = "0.4", optional = true }
 
 # WASM (feature-gated)
 wasm-bindgen = { version = "0.2", optional = true }
@@ -145,3 +147,7 @@ harness = false
 [[example]]
 name = "doctest_extraction"
 required-features = ["doctest"]
+
+[[example]]
+name = "hub_publishing"
+required-features = ["hf-hub"]

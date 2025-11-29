@@ -1,0 +1,52 @@
+id: GH-11
+title: "Native HuggingFace Hub upload API - alimentar differentiator"
+type: feature
+description: |
+  Implement native Rust upload to HuggingFace Hub using NDJSON commit API.
+  This is a MAJOR differentiator - official hf-hub crate is download-only.
+  alimentar becomes the complete HF Hub solution for Rust.
+
+  API Format (reverse-engineered from huggingface_hub Python):
+  - POST to /api/datasets/{repo_id}/commit/{branch}
+  - Content-Type: application/x-ndjson
+  - Line 1: {"key": "header", "value": {"summary": "...", "description": ""}}
+  - Line 2+: {"key": "file", "value": {"content": "base64...", "path": "...", "encoding": "base64"}}
+
+  LIMITATION: Binary files (parquet, etc.) require XET storage protocol.
+  HuggingFace now rejects binary files via commit API - need to use:
+  - LFS preupload API: POST /api/datasets/{repo}/preupload/{revision}
+  - Then create commit with LFS pointer files
+  Text files (README.md, configs) work with the NDJSON commit API.
+github_issue: 11
+status: done
+progress: 100
+created: 2025-11-29
+completed: 2025-11-29
+labels:
+  - enhancement
+  - hf-hub
+  - differentiator
+tasks:
+  - "[x] Add Hub subcommand with Push variant"
+  - "[x] Write unit tests for HfPublisher builder"
+  - "[x] Write failing tests for NDJSON payload format"
+  - "[x] Implement NDJSON upload to pass tests"
+  - "[x] Integration test against real HuggingFace API (text files work!)"
+  - "[x] Add README upload support"
+  - "[x] Add LFS batch API support for binary files (parquet, images, etc.)"
+  - "[x] Integration test parquet upload via LFS - SUCCESS!"
+  - "[x] Add book chapter: book/src/hf-hub/publishing.md"
+  - "[x] Add example: examples/hub_publishing.rs"
+  - "[x] Add CLI quality warning with aprender/entrenar recipes"
+  - "[x] Update SUMMARY.md with publishing chapter"
+notes: |
+  alimentar now has COMPLETE HuggingFace Hub upload support:
+  - Text files (README.md, JSON, CSV): Direct NDJSON commit API
+  - Binary files (parquet, images, models): LFS batch API with S3 presigned URLs
+  This is a MAJOR differentiator - official hf-hub crate is download-only.
+
+  Documentation & Quality:
+  - Book chapter with quality warnings and recipes
+  - Example showing quality validation workflow
+  - CLI shows quality warning before every upload
+  - Recipes for aprender (cleaning) and entrenar (augmentation)

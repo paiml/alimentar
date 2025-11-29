@@ -82,6 +82,7 @@
 
 - [Overview](./hf-hub/overview.md)
 - [Importing Datasets](./hf-hub/importing.md)
+- [Publishing Datasets](./hf-hub/publishing.md)
 - [Cache Management](./hf-hub/cache.md)
 - [API Reference](./hf-hub/api-reference.md)
 
