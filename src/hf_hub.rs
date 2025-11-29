@@ -532,14 +532,10 @@ impl HfPublisher {
         // Write batch to parquet in memory
         let mut buffer = Vec::new();
         {
-            let mut writer = ArrowWriter::try_new(&mut buffer, batch.schema(), None)
-                .map_err(Error::Parquet)?;
-            writer
-                .write(batch)
-                .map_err(Error::Parquet)?;
-            writer
-                .close()
-                .map_err(Error::Parquet)?;
+            let mut writer =
+                ArrowWriter::try_new(&mut buffer, batch.schema(), None).map_err(Error::Parquet)?;
+            writer.write(batch).map_err(Error::Parquet)?;
+            writer.close().map_err(Error::Parquet)?;
         }
 
         self.upload_file(path_in_repo, &buffer).await
@@ -732,11 +728,7 @@ pub struct ValidationError {
 
 impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Invalid '{}': '{}' is not valid",
-            self.field, self.value
-        )?;
+        write!(f, "Invalid '{}': '{}' is not valid", self.field, self.value)?;
         if !self.suggestions.is_empty() {
             write!(f, ". Did you mean: {}?", self.suggestions.join(", "))?;
         }
@@ -1366,7 +1358,9 @@ task_categories:
         assert_eq!(errors[0].field, "task_categories");
         assert_eq!(errors[0].value, "text2text-generation");
         // Should suggest "text-generation" as similar
-        assert!(errors[0].suggestions.contains(&"text-generation".to_string()));
+        assert!(errors[0]
+            .suggestions
+            .contains(&"text-generation".to_string()));
     }
 
     #[test]
@@ -1482,8 +1476,7 @@ task_categories:
 
     #[test]
     fn test_suggest_similar_finds_matches() {
-        let suggestions =
-            DatasetCardValidator::suggest_similar("text-gen", VALID_TASK_CATEGORIES);
+        let suggestions = DatasetCardValidator::suggest_similar("text-gen", VALID_TASK_CATEGORIES);
         assert!(!suggestions.is_empty());
         // Should find text-generation
         assert!(suggestions.iter().any(|s| s.contains("text")));
@@ -1492,10 +1485,7 @@ task_categories:
     #[test]
     fn test_all_valid_categories_pass() {
         for cat in VALID_TASK_CATEGORIES {
-            let readme = format!(
-                "---\ntask_categories:\n  - {}\n---\n",
-                cat
-            );
+            let readme = format!("---\ntask_categories:\n  - {}\n---\n", cat);
             let errors = DatasetCardValidator::validate_readme(&readme);
             assert!(errors.is_empty(), "Category '{}' should be valid", cat);
         }
@@ -1504,10 +1494,7 @@ task_categories:
     #[test]
     fn test_all_valid_size_categories_pass() {
         for size in VALID_SIZE_CATEGORIES {
-            let readme = format!(
-                "---\nsize_categories:\n  - {}\n---\n",
-                size
-            );
+            let readme = format!("---\nsize_categories:\n  - {}\n---\n", size);
             let errors = DatasetCardValidator::validate_readme(&readme);
             assert!(errors.is_empty(), "Size '{}' should be valid", size);
         }

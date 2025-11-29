@@ -90,6 +90,9 @@ pub mod transform;
 #[cfg(feature = "shuffle")]
 pub mod weighted;
 
+#[cfg(feature = "doctest")]
+pub mod doctest;
+
 // Re-exports for convenience
 // Re-export arrow types commonly needed
 pub use arrow::{
@@ -100,6 +103,8 @@ pub use arrow::{
 pub use async_prefetch::{AsyncPrefetchBuilder, AsyncPrefetchDataset, SyncPrefetchDataset};
 pub use dataloader::DataLoader;
 pub use dataset::{ArrowDataset, CsvOptions, Dataset, JsonOptions};
+#[cfg(feature = "doctest")]
+pub use doctest::{DocTest, DocTestCorpus, DocTestParser};
 pub use drift::{ColumnDrift, DriftDetector, DriftReport, DriftSeverity, DriftTest};
 pub use error::{Error, Result};
 pub use federated::{
