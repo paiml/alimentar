@@ -133,3 +133,7 @@ option_if_let_else = "allow"
 [[bench]]
 name = "dataset_bench"
 harness = false
+
+[[example]]
+name = "doctest_extraction"
+required-features = ["doctest"]
