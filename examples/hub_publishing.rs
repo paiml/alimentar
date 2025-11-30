@@ -16,7 +16,6 @@
 //! cargo run --example hub_publishing --features hf-hub
 //! ```
 
-
 /// Minimum acceptable quality score (Grade B)
 const MIN_QUALITY_SCORE: f64 = 85.0;
 
@@ -118,7 +117,13 @@ fn simulate_quality_check(path: &str) -> f64 {
 
     let mut total = 0.0;
     for (name, score, detail) in &checks {
-        let status = if *score >= 90.0 { "✓" } else if *score >= 70.0 { "⚠" } else { "✗" };
+        let status = if *score >= 90.0 {
+            "✓"
+        } else if *score >= 70.0 {
+            "⚠"
+        } else {
+            "✗"
+        };
         println!("  {status} {name}: {score:.0}% - {detail}");
         total += score;
     }
@@ -151,7 +156,8 @@ fn print_quality_report(score: f64) {
 
 /// Generate README template with quality score
 fn generate_readme_template(quality_score: f64) -> String {
-    format!(r#"---
+    format!(
+        r#"---
 license: apache-2.0
 task_categories:
   - text-generation
@@ -193,7 +199,13 @@ dataset = load_dataset("your-org/your-dataset")
 Apache 2.0
 "#,
         quality_score,
-        if quality_score >= 95.0 { "A" } else if quality_score >= 85.0 { "B" } else { "C" },
+        if quality_score >= 95.0 {
+            "A"
+        } else if quality_score >= 85.0 {
+            "B"
+        } else {
+            "C"
+        },
         quality_score,
         chrono::Utc::now().format("%Y-%m-%d")
     )
@@ -207,7 +219,10 @@ fn validate_readme(content: &str) {
     let checks = vec![
         ("license field", content.contains("license:")),
         ("task_categories", content.contains("task_categories:")),
-        ("valid task category", content.contains("text-generation") || content.contains("translation")),
+        (
+            "valid task category",
+            content.contains("text-generation") || content.contains("translation"),
+        ),
         ("size_categories", content.contains("size_categories:")),
     ];
 
@@ -278,8 +293,12 @@ fn print_quality_recipes() {
 mod chrono {
     pub struct Utc;
     impl Utc {
-        pub fn now() -> Self { Self }
+        pub fn now() -> Self {
+            Self
+        }
         #[allow(clippy::unused_self)]
-        pub fn format(&self, _: &str) -> &'static str { "2025-11-29" }
+        pub fn format(&self, _: &str) -> &'static str {
+            "2025-11-29"
+        }
     }
 }

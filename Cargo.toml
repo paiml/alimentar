@@ -1,6 +1,6 @@
 [package]
 name = "alimentar"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 authors = ["paiml"]
 description = "Data Loading, Distribution and Tooling in Pure Rust"
@@ -30,10 +30,11 @@ doctest = ["dep:chrono", "dep:regex", "dep:walkdir"]
 
 [dependencies]
 # Core (always)
-arrow = { version = "53", default-features = false, features = ["prettyprint", "ipc"] }
-arrow-csv = { version = "53" }
-arrow-json = { version = "53" }
-parquet = { version = "53", default-features = false, features = ["arrow", "snap"] }
+# NOTE: arrow 54+ fixes chrono 0.4.42 conflict (quarter() method ambiguity)
+arrow = { version = "54", default-features = false, features = ["prettyprint", "ipc"] }
+arrow-csv = { version = "54" }
+arrow-json = { version = "54" }
+parquet = { version = "54", default-features = false, features = ["arrow", "snap"] }
 thiserror = "2"
 bytes = "1"
 serde = { version = "1", features = ["derive"] }
@@ -104,6 +105,10 @@ predicates = "3"
 name = "alimentar"
 path = "src/main.rs"
 required-features = ["cli"]
+
+[[bin]]
+name = "generate_fixtures"
+path = "scripts/generate_fixtures.rs"
 
 [lib]
 name = "alimentar"

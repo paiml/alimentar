@@ -18,13 +18,12 @@
 
 use std::fmt::Write;
 
-use super::session::ReplSession;
-
 #[cfg(feature = "repl")]
 use nu_ansi_term::{Color, Style};
-
 #[cfg(feature = "repl")]
 use reedline::Prompt;
+
+use super::session::ReplSession;
 
 /// Health status for Andon display
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,7 +109,8 @@ impl AndonPrompt {
             }
 
             if let Some(grade) = session.active_grade() {
-                let status = HealthStatus::from_grade(grade.to_string().chars().next().unwrap_or(' '));
+                let status =
+                    HealthStatus::from_grade(grade.to_string().chars().next().unwrap_or(' '));
                 let _ = write!(prompt, ", {}{}", grade, status.indicator());
             }
 
@@ -138,7 +138,11 @@ impl AndonPrompt {
             if let Some(grade) = session.active_grade() {
                 let grade_char = grade.to_string().chars().next().unwrap_or(' ');
                 let status = HealthStatus::from_grade(grade_char);
-                let grade_colored = status.color().bold().paint(format!("{}{}", grade, status.indicator()));
+                let grade_colored =
+                    status
+                        .color()
+                        .bold()
+                        .paint(format!("{}{}", grade, status.indicator()));
                 let _ = write!(prompt, ", {}", grade_colored);
             }
 
@@ -162,7 +166,10 @@ impl Prompt for AndonPrompt {
         std::borrow::Cow::Borrowed("")
     }
 
-    fn render_prompt_indicator(&self, _prompt_mode: reedline::PromptEditMode) -> std::borrow::Cow<'_, str> {
+    fn render_prompt_indicator(
+        &self,
+        _prompt_mode: reedline::PromptEditMode,
+    ) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Borrowed("")
     }
 
@@ -170,7 +177,10 @@ impl Prompt for AndonPrompt {
         std::borrow::Cow::Borrowed("... ")
     }
 
-    fn render_prompt_history_search_indicator(&self, _history_search: reedline::PromptHistorySearch) -> std::borrow::Cow<'_, str> {
+    fn render_prompt_history_search_indicator(
+        &self,
+        _history_search: reedline::PromptHistorySearch,
+    ) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Borrowed("(search) ")
     }
 }
@@ -202,7 +212,10 @@ impl Prompt for SessionPrompt<'_> {
         std::borrow::Cow::Borrowed("")
     }
 
-    fn render_prompt_indicator(&self, _prompt_mode: reedline::PromptEditMode) -> std::borrow::Cow<'_, str> {
+    fn render_prompt_indicator(
+        &self,
+        _prompt_mode: reedline::PromptEditMode,
+    ) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Borrowed("")
     }
 
@@ -210,19 +223,26 @@ impl Prompt for SessionPrompt<'_> {
         std::borrow::Cow::Borrowed("... ")
     }
 
-    fn render_prompt_history_search_indicator(&self, _history_search: reedline::PromptHistorySearch) -> std::borrow::Cow<'_, str> {
+    fn render_prompt_history_search_indicator(
+        &self,
+        _history_search: reedline::PromptHistorySearch,
+    ) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Borrowed("(search) ")
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use arrow::array::{Float64Array, Int32Array, StringArray};
-    use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
-    use arrow::record_batch::RecordBatch;
-    use crate::ArrowDataset;
     use std::sync::Arc;
+
+    use arrow::{
+        array::{Float64Array, Int32Array, StringArray},
+        datatypes::{DataType, Field, Schema as ArrowSchema},
+        record_batch::RecordBatch,
+    };
+
+    use super::*;
+    use crate::ArrowDataset;
 
     fn create_test_dataset() -> ArrowDataset {
         let schema = Arc::new(ArrowSchema::new(vec![
@@ -235,7 +255,13 @@ mod tests {
             schema.clone(),
             vec![
                 Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
-                Arc::new(StringArray::from(vec![Some("a"), Some("b"), None, Some("d"), Some("e")])),
+                Arc::new(StringArray::from(vec![
+                    Some("a"),
+                    Some("b"),
+                    None,
+                    Some("d"),
+                    Some("e"),
+                ])),
                 Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0])),
             ],
         )
@@ -390,7 +416,12 @@ mod tests {
     fn test_andon_prompt_render_prompt_indicator() {
         use reedline::Prompt;
         let prompt = AndonPrompt::new();
-        assert_eq!(prompt.render_prompt_indicator(reedline::PromptEditMode::Default).as_ref(), "");
+        assert_eq!(
+            prompt
+                .render_prompt_indicator(reedline::PromptEditMode::Default)
+                .as_ref(),
+            ""
+        );
     }
 
     #[cfg(feature = "repl")]
@@ -406,8 +437,16 @@ mod tests {
     fn test_andon_prompt_render_history_search() {
         use reedline::Prompt;
         let prompt = AndonPrompt::new();
-        let search = reedline::PromptHistorySearch::new(reedline::PromptHistorySearchStatus::Passing, "test".to_string());
-        assert_eq!(prompt.render_prompt_history_search_indicator(search).as_ref(), "(search) ");
+        let search = reedline::PromptHistorySearch::new(
+            reedline::PromptHistorySearchStatus::Passing,
+            "test".to_string(),
+        );
+        assert_eq!(
+            prompt
+                .render_prompt_history_search_indicator(search)
+                .as_ref(),
+            "(search) "
+        );
     }
 
     // SessionPrompt tests
@@ -443,7 +482,12 @@ mod tests {
         use reedline::Prompt;
         let session = ReplSession::new();
         let prompt = SessionPrompt::new(&session);
-        assert_eq!(prompt.render_prompt_indicator(reedline::PromptEditMode::Default).as_ref(), "");
+        assert_eq!(
+            prompt
+                .render_prompt_indicator(reedline::PromptEditMode::Default)
+                .as_ref(),
+            ""
+        );
     }
 
     #[cfg(feature = "repl")]
@@ -461,8 +505,16 @@ mod tests {
         use reedline::Prompt;
         let session = ReplSession::new();
         let prompt = SessionPrompt::new(&session);
-        let search = reedline::PromptHistorySearch::new(reedline::PromptHistorySearchStatus::Passing, "test".to_string());
-        assert_eq!(prompt.render_prompt_history_search_indicator(search).as_ref(), "(search) ");
+        let search = reedline::PromptHistorySearch::new(
+            reedline::PromptHistorySearchStatus::Passing,
+            "test".to_string(),
+        );
+        assert_eq!(
+            prompt
+                .render_prompt_history_search_indicator(search)
+                .as_ref(),
+            "(search) "
+        );
     }
 
     #[cfg(feature = "repl")]

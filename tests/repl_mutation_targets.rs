@@ -8,7 +8,9 @@
 //! - Return value changes
 //! - Comparison operator changes
 
-use alimentar::repl::{CommandParser, ReplCommand, ReplSession, SchemaAwareCompleter, HealthStatus, DisplayConfig};
+use alimentar::repl::{
+    CommandParser, DisplayConfig, HealthStatus, ReplCommand, ReplSession, SchemaAwareCompleter,
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BOUNDARY CONDITION TESTS
@@ -60,7 +62,12 @@ fn mutation_display_config_defaults() {
 fn mutation_quality_score_suggest_true() {
     let result = CommandParser::parse("quality score --suggest");
     assert!(result.is_ok());
-    if let Ok(ReplCommand::QualityScore { suggest, json, badge }) = result {
+    if let Ok(ReplCommand::QualityScore {
+        suggest,
+        json,
+        badge,
+    }) = result
+    {
         assert!(suggest, "suggest should be true");
         assert!(!json, "json should be false");
         assert!(!badge, "badge should be false");
@@ -71,7 +78,12 @@ fn mutation_quality_score_suggest_true() {
 fn mutation_quality_score_json_true() {
     let result = CommandParser::parse("quality score --json");
     assert!(result.is_ok());
-    if let Ok(ReplCommand::QualityScore { suggest, json, badge }) = result {
+    if let Ok(ReplCommand::QualityScore {
+        suggest,
+        json,
+        badge,
+    }) = result
+    {
         assert!(!suggest, "suggest should be false");
         assert!(json, "json should be true");
         assert!(!badge, "badge should be false");
@@ -82,7 +94,12 @@ fn mutation_quality_score_json_true() {
 fn mutation_quality_score_badge_true() {
     let result = CommandParser::parse("quality score --badge");
     assert!(result.is_ok());
-    if let Ok(ReplCommand::QualityScore { suggest, json, badge }) = result {
+    if let Ok(ReplCommand::QualityScore {
+        suggest,
+        json,
+        badge,
+    }) = result
+    {
         assert!(!suggest, "suggest should be false");
         assert!(!json, "json should be false");
         assert!(badge, "badge should be true");
@@ -93,7 +110,12 @@ fn mutation_quality_score_badge_true() {
 fn mutation_quality_score_all_false() {
     let result = CommandParser::parse("quality score");
     assert!(result.is_ok());
-    if let Ok(ReplCommand::QualityScore { suggest, json, badge }) = result {
+    if let Ok(ReplCommand::QualityScore {
+        suggest,
+        json,
+        badge,
+    }) = result
+    {
         assert!(!suggest, "suggest should be false");
         assert!(!json, "json should be false");
         assert!(!badge, "badge should be false");
@@ -198,35 +220,62 @@ fn mutation_indicator_none_is_empty() {
 
 #[test]
 fn mutation_quit_variants_all_work() {
-    assert!(matches!(CommandParser::parse("quit").unwrap(), ReplCommand::Quit));
-    assert!(matches!(CommandParser::parse("exit").unwrap(), ReplCommand::Quit));
-    assert!(matches!(CommandParser::parse("q").unwrap(), ReplCommand::Quit));
+    assert!(matches!(
+        CommandParser::parse("quit").unwrap(),
+        ReplCommand::Quit
+    ));
+    assert!(matches!(
+        CommandParser::parse("exit").unwrap(),
+        ReplCommand::Quit
+    ));
+    assert!(matches!(
+        CommandParser::parse("q").unwrap(),
+        ReplCommand::Quit
+    ));
 }
 
 #[test]
 fn mutation_help_variants_all_work() {
-    assert!(matches!(CommandParser::parse("help").unwrap(), ReplCommand::Help { topic: None }));
-    assert!(matches!(CommandParser::parse("?").unwrap(), ReplCommand::Help { topic: None }));
+    assert!(matches!(
+        CommandParser::parse("help").unwrap(),
+        ReplCommand::Help { topic: None }
+    ));
+    assert!(matches!(
+        CommandParser::parse("?").unwrap(),
+        ReplCommand::Help { topic: None }
+    ));
 }
 
 #[test]
 fn mutation_info_exact_match() {
-    assert!(matches!(CommandParser::parse("info").unwrap(), ReplCommand::Info));
+    assert!(matches!(
+        CommandParser::parse("info").unwrap(),
+        ReplCommand::Info
+    ));
 }
 
 #[test]
 fn mutation_schema_exact_match() {
-    assert!(matches!(CommandParser::parse("schema").unwrap(), ReplCommand::Schema));
+    assert!(matches!(
+        CommandParser::parse("schema").unwrap(),
+        ReplCommand::Schema
+    ));
 }
 
 #[test]
 fn mutation_datasets_exact_match() {
-    assert!(matches!(CommandParser::parse("datasets").unwrap(), ReplCommand::Datasets));
+    assert!(matches!(
+        CommandParser::parse("datasets").unwrap(),
+        ReplCommand::Datasets
+    ));
 }
 
 #[test]
 fn mutation_quality_check_exact_match() {
-    assert!(matches!(CommandParser::parse("quality check").unwrap(), ReplCommand::QualityCheck));
+    assert!(matches!(
+        CommandParser::parse("quality check").unwrap(),
+        ReplCommand::QualityCheck
+    ));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -370,8 +419,14 @@ fn mutation_subcommands_quality_exact() {
     // Catches: replace CommandParser::subcommands with vec![] or vec![""]
     let subs = CommandParser::subcommands("quality");
     assert_eq!(subs.len(), 2, "quality must have exactly 2 subcommands");
-    assert!(subs.contains(&"check"), "quality must have 'check' subcommand");
-    assert!(subs.contains(&"score"), "quality must have 'score' subcommand");
+    assert!(
+        subs.contains(&"check"),
+        "quality must have 'check' subcommand"
+    );
+    assert!(
+        subs.contains(&"score"),
+        "quality must have 'score' subcommand"
+    );
 }
 
 #[test]

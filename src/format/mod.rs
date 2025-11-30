@@ -2101,7 +2101,10 @@ mod tests {
 
         let result = Header::from_bytes(&valid_bytes);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unsupported version"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported version"));
     }
 
     #[test]
@@ -2115,7 +2118,10 @@ mod tests {
 
         let result = Header::from_bytes(&bytes);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown dataset type"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown dataset type"));
     }
 
     #[test]
@@ -2130,7 +2136,10 @@ mod tests {
 
         let result = Header::from_bytes(&bytes);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown compression"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown compression"));
     }
 
     #[test]
@@ -2340,8 +2349,7 @@ mod tests {
 
     #[test]
     fn test_save_options_clone() {
-        let options = SaveOptions::default()
-            .with_compression(Compression::Lz4);
+        let options = SaveOptions::default().with_compression(Compression::Lz4);
         let cloned = options.clone();
         assert_eq!(cloned.compression, Compression::Lz4);
     }
@@ -2365,7 +2373,11 @@ mod tests {
     #[test]
     fn test_header_all_flags_combined() {
         let mut header = Header::new(DatasetType::Tabular);
-        header.flags = flags::ENCRYPTED | flags::SIGNED | flags::STREAMING | flags::LICENSED | flags::TRUENO_NATIVE;
+        header.flags = flags::ENCRYPTED
+            | flags::SIGNED
+            | flags::STREAMING
+            | flags::LICENSED
+            | flags::TRUENO_NATIVE;
 
         assert!(header.is_encrypted());
         assert!(header.is_signed());
@@ -2389,8 +2401,13 @@ mod tests {
             .unwrap_or_else(|| panic!("temp dir"));
         let path = temp_dir.path().join("test.ald");
 
-        save_to_file(&path, &batches, DatasetType::Tabular, &SaveOptions::default())
-            .expect("save failed");
+        save_to_file(
+            &path,
+            &batches,
+            DatasetType::Tabular,
+            &SaveOptions::default(),
+        )
+        .expect("save failed");
 
         let loaded = load_from_file(&path).expect("load failed");
         assert_eq!(loaded.batches.len(), 1);
@@ -2419,10 +2436,8 @@ mod tests {
 
     #[test]
     fn test_load_from_file_with_options_not_found() {
-        let result = load_from_file_with_options(
-            "/nonexistent/path/test.ald",
-            &LoadOptions::default(),
-        );
+        let result =
+            load_from_file_with_options("/nonexistent/path/test.ald", &LoadOptions::default());
         assert!(result.is_err());
     }
 }

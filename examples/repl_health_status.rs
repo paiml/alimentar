@@ -26,20 +26,26 @@ fn main() {
 
     // Visual indicators
     println!("\n--- Visual Indicators ---");
-    println!("  Healthy:  '{}'  (empty - all good)", HealthStatus::Healthy.indicator());
-    println!("  Warning:  '{}'  (single bang - attention needed)", HealthStatus::Warning.indicator());
-    println!("  Critical: '{}' (double bang - stop the line!)", HealthStatus::Critical.indicator());
-    println!("  None:     '{}'  (empty - no data)", HealthStatus::None.indicator());
+    println!(
+        "  Healthy:  '{}'  (empty - all good)",
+        HealthStatus::Healthy.indicator()
+    );
+    println!(
+        "  Warning:  '{}'  (single bang - attention needed)",
+        HealthStatus::Warning.indicator()
+    );
+    println!(
+        "  Critical: '{}' (double bang - stop the line!)",
+        HealthStatus::Critical.indicator()
+    );
+    println!(
+        "  None:     '{}'  (empty - no data)",
+        HealthStatus::None.indicator()
+    );
 
     // Simulated quality scores
     println!("\n--- Quality Score Examples ---");
-    let scores = [
-        (95, 'A'),
-        (87, 'B'),
-        (72, 'C'),
-        (58, 'D'),
-        (35, 'F'),
-    ];
+    let scores = [(95, 'A'), (87, 'B'), (72, 'C'), (58, 'D'), (35, 'F')];
     for (score, grade) in &scores {
         let status = HealthStatus::from_grade(*grade);
         let indicator = status.indicator();
@@ -48,9 +54,7 @@ fn main() {
         } else {
             format!(" {indicator}")
         };
-        println!(
-            "  Score: {score:3} | Grade: {grade} | Status: {status:?}{suffix}"
-        );
+        println!("  Score: {score:3} | Grade: {grade} | Status: {status:?}{suffix}");
     }
 
     // Toyota Way principles

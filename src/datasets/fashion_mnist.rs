@@ -336,8 +336,9 @@ fn draw_ankle_boot(img: &mut [f32], var: f32) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use arrow::array::Float32Array;
+
+    use super::*;
     use crate::Dataset;
 
     #[test]
@@ -436,7 +437,11 @@ mod tests {
             .unwrap();
         for i in 0..pixel_col.len() {
             let val = pixel_col.value(i);
-            assert!((0.0..=1.0).contains(&val), "Pixel value {} out of range", val);
+            assert!(
+                (0.0..=1.0).contains(&val),
+                "Pixel value {} out of range",
+                val
+            );
         }
     }
 
@@ -479,7 +484,11 @@ mod tests {
             let pattern = generate_fashion_pattern(class, 0);
             assert_eq!(pattern.len(), 784, "Class {} pattern wrong size", class);
             let non_zero: usize = pattern.iter().filter(|&&p| p > 0.0).count();
-            assert!(non_zero > 0, "Class {} pattern should have non-zero pixels", class);
+            assert!(
+                non_zero > 0,
+                "Class {} pattern should have non-zero pixels",
+                class
+            );
         }
     }
 
@@ -488,8 +497,14 @@ mod tests {
         let pattern1 = generate_fashion_pattern(0, 0);
         let pattern2 = generate_fashion_pattern(0, 5);
         // Patterns should differ due to variation
-        let different = pattern1.iter().zip(pattern2.iter()).any(|(a, b)| (a - b).abs() > 0.001);
-        assert!(different, "Patterns with different variations should differ");
+        let different = pattern1
+            .iter()
+            .zip(pattern2.iter())
+            .any(|(a, b)| (a - b).abs() > 0.001);
+        assert!(
+            different,
+            "Patterns with different variations should differ"
+        );
     }
 
     #[test]
@@ -513,7 +528,7 @@ mod tests {
         let mut img = vec![0.0f32; 784];
         set_pixel(&mut img, 30, 14, 1.0); // x out of bounds
         set_pixel(&mut img, 14, 30, 1.0); // y out of bounds
-        // Should not panic, and image should be unchanged
+                                          // Should not panic, and image should be unchanged
         let non_zero: usize = img.iter().filter(|&&p| p > 0.0).count();
         assert_eq!(non_zero, 0);
     }

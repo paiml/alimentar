@@ -606,9 +606,9 @@ impl HfPublisher {
             .map_err(|e| Error::io_no_path(std::io::Error::other(e)))?;
 
         // Extract S3 upload URL from response: objects[0].actions.upload.href
-        let objects = batch_json["objects"]
-            .as_array()
-            .ok_or_else(|| Error::io_no_path(std::io::Error::other("Invalid LFS batch response")))?;
+        let objects = batch_json["objects"].as_array().ok_or_else(|| {
+            Error::io_no_path(std::io::Error::other("Invalid LFS batch response"))
+        })?;
 
         let object = objects
             .first()
@@ -618,9 +618,9 @@ impl HfPublisher {
         let upload_action = object.get("actions").and_then(|a| a.get("upload"));
 
         if let Some(upload) = upload_action {
-            let upload_url = upload["href"]
-                .as_str()
-                .ok_or_else(|| Error::io_no_path(std::io::Error::other("No upload URL in LFS response")))?;
+            let upload_url = upload["href"].as_str().ok_or_else(|| {
+                Error::io_no_path(std::io::Error::other("No upload URL in LFS response"))
+            })?;
 
             // Step 3: Upload binary content to S3 (presigned URL, no auth header needed)
             let upload_response = client
@@ -644,7 +644,8 @@ impl HfPublisher {
 
         // Step 4: Commit with LFS file reference
         let commit_url = format!("{}/datasets/{}/commit/main", HF_API_URL, self.repo_id);
-        let commit_payload = build_ndjson_lfs_commit(&self.commit_message, path_in_repo, &oid, size);
+        let commit_payload =
+            build_ndjson_lfs_commit(&self.commit_message, path_in_repo, &oid, size);
 
         let commit_response = client
             .post(&commit_url)
@@ -1071,12 +1072,10 @@ impl DatasetCardValidator {
             "qa" | "QA" => Some("question-answering"),
             "ner" | "NER" => Some("token-classification"),
             "sentiment" => Some("text-classification"),
-            _ => {
-                VALID_TASK_CATEGORIES
-                    .iter()
-                    .find(|c| c.starts_with(invalid) || invalid.starts_with(*c))
-                    .copied()
-            }
+            _ => VALID_TASK_CATEGORIES
+                .iter()
+                .find(|c| c.starts_with(invalid) || invalid.starts_with(*c))
+                .copied(),
         }
     }
 }
@@ -1111,7 +1110,11 @@ impl DatasetCardValidator {
 /// );
 /// ```
 #[cfg(feature = "hf-hub")]
-pub fn build_ndjson_upload_payload(commit_message: &str, path_in_repo: &str, data: &[u8]) -> String {
+pub fn build_ndjson_upload_payload(
+    commit_message: &str,
+    path_in_repo: &str,
+    data: &[u8],
+) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine};
 
     // Line 1: Header with commit message
@@ -1142,12 +1145,46 @@ pub fn build_ndjson_upload_payload(commit_message: &str, path_in_repo: &str, dat
 
 /// Binary file extensions that require LFS upload.
 const BINARY_EXTENSIONS: &[&str] = &[
-    "parquet", "arrow", "bin", "safetensors", "pt", "pth", "onnx",
-    "png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff",
-    "mp3", "wav", "flac", "ogg", "mp4", "webm", "avi", "mkv",
-    "zip", "tar", "gz", "bz2", "xz", "7z", "rar",
-    "pdf", "doc", "docx", "xls", "xlsx",
-    "npy", "npz", "h5", "hdf5", "pkl", "pickle",
+    "parquet",
+    "arrow",
+    "bin",
+    "safetensors",
+    "pt",
+    "pth",
+    "onnx",
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "webp",
+    "bmp",
+    "tiff",
+    "mp3",
+    "wav",
+    "flac",
+    "ogg",
+    "mp4",
+    "webm",
+    "avi",
+    "mkv",
+    "zip",
+    "tar",
+    "gz",
+    "bz2",
+    "xz",
+    "7z",
+    "rar",
+    "pdf",
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+    "npy",
+    "npz",
+    "h5",
+    "hdf5",
+    "pkl",
+    "pickle",
 ];
 
 /// Checks if a file path is a binary file that requires LFS upload.
@@ -1204,8 +1241,8 @@ pub fn build_lfs_preupload_request(path: &str, data: &[u8]) -> String {
 
 /// Builds a request for the LFS batch API.
 ///
-/// The LFS batch API is the Git LFS standard endpoint for uploading large files.
-/// It returns presigned S3 URLs for actual binary upload.
+/// The LFS batch API is the Git LFS standard endpoint for uploading large
+/// files. It returns presigned S3 URLs for actual binary upload.
 ///
 /// # Arguments
 ///
@@ -1917,8 +1954,7 @@ task_categories:
 
     #[test]
     fn test_hf_publisher_with_commit_message() {
-        let publisher =
-            HfPublisher::new("paiml/test-dataset").with_commit_message("Test commit");
+        let publisher = HfPublisher::new("paiml/test-dataset").with_commit_message("Test commit");
         assert_eq!(publisher.repo_id(), "paiml/test-dataset");
     }
 
@@ -2209,7 +2245,10 @@ task_categories:
 
         let json: serde_json::Value = serde_json::from_str(&request).unwrap();
         assert_eq!(json["operation"], "upload");
-        assert!(json["transfers"].as_array().unwrap().contains(&serde_json::json!("basic")));
+        assert!(json["transfers"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("basic")));
 
         let objects = json["objects"].as_array().unwrap();
         assert_eq!(objects.len(), 1);
@@ -2221,17 +2260,29 @@ task_categories:
 
     #[test]
     fn test_valid_task_categories() {
-        assert!(DatasetCardValidator::is_valid_task_category("text-generation"));
+        assert!(DatasetCardValidator::is_valid_task_category(
+            "text-generation"
+        ));
         assert!(DatasetCardValidator::is_valid_task_category("translation"));
-        assert!(DatasetCardValidator::is_valid_task_category("text-classification"));
-        assert!(DatasetCardValidator::is_valid_task_category("question-answering"));
-        assert!(DatasetCardValidator::is_valid_task_category("text2text-generation"));
+        assert!(DatasetCardValidator::is_valid_task_category(
+            "text-classification"
+        ));
+        assert!(DatasetCardValidator::is_valid_task_category(
+            "question-answering"
+        ));
+        assert!(DatasetCardValidator::is_valid_task_category(
+            "text2text-generation"
+        ));
     }
 
     #[test]
     fn test_invalid_task_categories() {
-        assert!(!DatasetCardValidator::is_valid_task_category("code-generation"));
-        assert!(!DatasetCardValidator::is_valid_task_category("invalid-task"));
+        assert!(!DatasetCardValidator::is_valid_task_category(
+            "code-generation"
+        ));
+        assert!(!DatasetCardValidator::is_valid_task_category(
+            "invalid-task"
+        ));
         assert!(!DatasetCardValidator::is_valid_task_category(""));
     }
 

@@ -11,7 +11,6 @@ pub enum ReplCommand {
     // ─────────────────────────────────────────────────────────────────────────────
     // Data Loading Commands
     // ─────────────────────────────────────────────────────────────────────────────
-
     /// Load a dataset from file
     Load {
         /// Path to the dataset file
@@ -30,7 +29,6 @@ pub enum ReplCommand {
     // ─────────────────────────────────────────────────────────────────────────────
     // Data Inspection Commands
     // ─────────────────────────────────────────────────────────────────────────────
-
     /// Display dataset metadata
     Info,
 
@@ -46,7 +44,6 @@ pub enum ReplCommand {
     // ─────────────────────────────────────────────────────────────────────────────
     // Quality Commands (Andon)
     // ─────────────────────────────────────────────────────────────────────────────
-
     /// Run quality checks
     QualityCheck,
 
@@ -63,7 +60,6 @@ pub enum ReplCommand {
     // ─────────────────────────────────────────────────────────────────────────────
     // Analysis Commands
     // ─────────────────────────────────────────────────────────────────────────────
-
     /// Detect drift against reference
     DriftDetect {
         /// Path to reference dataset
@@ -79,7 +75,6 @@ pub enum ReplCommand {
     // ─────────────────────────────────────────────────────────────────────────────
     // Pipeline Commands (Batuta Integration - ALIM-REPL-005)
     // ─────────────────────────────────────────────────────────────────────────────
-
     /// Export data for pipeline integration
     Export {
         /// What to export (quality)
@@ -97,7 +92,6 @@ pub enum ReplCommand {
     // ─────────────────────────────────────────────────────────────────────────────
     // Session Commands
     // ─────────────────────────────────────────────────────────────────────────────
-
     /// Show/export command history (ALIM-REPL-006)
     History {
         /// Export as reproducible script
@@ -187,9 +181,9 @@ impl CommandParser {
         let n = if args.is_empty() {
             10 // Default per spec
         } else {
-            args[0].parse().map_err(|_| {
-                Error::parse(format!("Invalid number: '{}'", args[0]))
-            })?
+            args[0]
+                .parse()
+                .map_err(|_| Error::parse(format!("Invalid number: '{}'", args[0])))?
         };
         Ok(ReplCommand::Head { n })
     }
@@ -205,7 +199,11 @@ impl CommandParser {
                 let suggest = args.contains(&"--suggest");
                 let json = args.contains(&"--json");
                 let badge = args.contains(&"--badge");
-                Ok(ReplCommand::QualityScore { suggest, json, badge })
+                Ok(ReplCommand::QualityScore {
+                    suggest,
+                    json,
+                    badge,
+                })
             }
             _ => Err(Error::parse(format!(
                 "Unknown quality subcommand: '{}'. Use: check, score",
@@ -237,7 +235,9 @@ impl CommandParser {
 
     fn parse_convert(args: &[&str]) -> Result<ReplCommand> {
         if args.is_empty() {
-            return Err(Error::parse("convert requires a format: csv, parquet, json"));
+            return Err(Error::parse(
+                "convert requires a format: csv, parquet, json",
+            ));
         }
         let format = args[0].to_lowercase();
         match format.as_str() {
@@ -291,21 +291,8 @@ impl CommandParser {
     #[must_use]
     pub fn command_names() -> Vec<&'static str> {
         vec![
-            "load",
-            "datasets",
-            "use",
-            "info",
-            "head",
-            "schema",
-            "quality",
-            "drift",
-            "convert",
-            "export",
-            "validate",
-            "history",
-            "help",
-            "quit",
-            "exit",
+            "load", "datasets", "use", "info", "head", "schema", "quality", "drift", "convert",
+            "export", "validate", "history", "help", "quit", "exit",
         ]
     }
 

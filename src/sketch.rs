@@ -1700,7 +1700,8 @@ mod tests {
 
     #[test]
     fn test_distributed_detector_severity_levels() {
-        // Create significantly different distributions to trigger different severity levels
+        // Create significantly different distributions to trigger different severity
+        // levels
         let values1: Vec<f64> = (0..100).map(|i| i as f64).collect();
         let values2: Vec<f64> = (0..100).map(|i| (i * 50) as f64).collect(); // 50x different
 
@@ -1756,7 +1757,9 @@ mod tests {
 
         let batch = RecordBatch::try_new(
             Arc::clone(&schema),
-            vec![Arc::new(Float32Array::from(vec![1.0f32, 2.0, 3.0, 4.0, 5.0]))],
+            vec![Arc::new(Float32Array::from(vec![
+                1.0f32, 2.0, 3.0, 4.0, 5.0,
+            ]))],
         )
         .expect("batch");
 

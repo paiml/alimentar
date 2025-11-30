@@ -1065,14 +1065,14 @@ mod tests {
 
     #[test]
     fn test_collect_lsb_bits_f32() {
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("value", DataType::Float32, false),
-        ]));
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "value",
+            DataType::Float32,
+            false,
+        )]));
         let values: Vec<f32> = (0..100).map(|i| i as f32).collect();
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![Arc::new(Float32Array::from(values))],
-        ).unwrap();
+        let batch =
+            RecordBatch::try_new(schema, vec![Arc::new(Float32Array::from(values))]).unwrap();
 
         let bits = collect_lsb_bits(&[batch], 0);
         assert_eq!(bits.len(), 100);

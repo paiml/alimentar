@@ -67,6 +67,7 @@
 pub mod async_prefetch;
 pub mod backend;
 /// CLI module for command-line interface
+#[cfg(feature = "cli")]
 pub mod cli;
 pub mod dataloader;
 pub mod dataset;

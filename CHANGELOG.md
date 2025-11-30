@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2025-11-30
+
+### Added
+- 100 Executable Examples specification with Toyota Way QA methodology
+- Book chapters for 100 examples (10 sections covering all functionality)
+- Fixture generation script (`scripts/generate_fixtures.rs`)
+- QA test harness script (`scripts/run_qa_spec.sh`)
+- Epic roadmap for 100 examples implementation (`docs/roadmaps/epic-100-examples.yaml`)
+- Integration tests for example scenarios (`tests/example_scenarios.rs`)
+- 100-point QA checklist with Toyota Production System principles
+- Stratified train/test split for MNIST dataset
+
+### Fixed
+- MNIST split now uses stratified sampling to ensure all digit classes in both sets
+- WASM build test gracefully handles missing target
+- Various clippy lints and code quality improvements
+
+### Changed
+- Arrow/Parquet upgraded to v54 (from v53)
+- Test suite expanded to 1636+ tests
+- Coverage maintained at 90.94%
+
 ## [0.2.1] - 2025-11-29
 
 ### Added
@@ -59,7 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature flags for optional dependencies (s3, http, hf-hub, wasm)
 - Comprehensive test suite with 571 tests
 
-[Unreleased]: https://github.com/paiml/alimentar/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/paiml/alimentar/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/paiml/alimentar/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/paiml/alimentar/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/paiml/alimentar/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/paiml/alimentar/releases/tag/v0.1.0

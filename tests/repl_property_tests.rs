@@ -5,10 +5,11 @@
 //! Uses proptest to verify invariants hold across random inputs.
 //! Follows Toyota Way: Poka-Yoke through exhaustive input validation.
 
-use proptest::prelude::*;
-
 // Import REPL types from the library
-use alimentar::repl::{CommandParser, ReplCommand, ReplSession, SchemaAwareCompleter, HealthStatus};
+use alimentar::repl::{
+    CommandParser, HealthStatus, ReplCommand, ReplSession, SchemaAwareCompleter,
+};
+use proptest::prelude::*;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROPERTY TESTS: Command Parser (ALIM-REPL-003)
