@@ -1,12 +1,16 @@
 //! Interactive REPL for alimentar (ALIM-SPEC-006)
 //!
-//! Implements the Interactive Andon concept from the CLI & REPL Quality Specification.
+//! Implements the Interactive Andon concept from the CLI & REPL Quality
+//! Specification.
 //!
 //! # Design Principles (Toyota Way)
 //!
-//! - **Genchi Genbutsu** (Go and See): Interactive data inspection without compilation
-//! - **Jikotei Kanketsu** (Self-completion): Complete data quality tasks in one environment
-//! - **Poka-Yoke** (Mistake Proofing): Schema-aware autocomplete prevents invalid input
+//! - **Genchi Genbutsu** (Go and See): Interactive data inspection without
+//!   compilation
+//! - **Jikotei Kanketsu** (Self-completion): Complete data quality tasks in one
+//!   environment
+//! - **Poka-Yoke** (Mistake Proofing): Schema-aware autocomplete prevents
+//!   invalid input
 //! - **Andon** (Visual Control): Color-coded prompts show dataset health status
 //!
 //! # Requirements Implemented
@@ -23,22 +27,21 @@
 //! - [5] Nielsen (1993). Usability Engineering - 100ms response threshold
 //! - [16] Perez & Granger (2007). IPython - reproducible sessions
 
-mod session;
 mod commands;
 mod completer;
 mod prompt;
-
-pub use session::{ReplSession, DisplayConfig};
-pub use commands::{ReplCommand, CommandParser};
-pub use completer::SchemaAwareCompleter;
-pub use prompt::{AndonPrompt, HealthStatus};
-
-use crate::Result;
-
-#[cfg(feature = "repl")]
-use reedline::{Reedline, Signal};
+mod session;
 
 use std::io::IsTerminal;
+
+pub use commands::{CommandParser, ReplCommand};
+pub use completer::SchemaAwareCompleter;
+pub use prompt::{AndonPrompt, HealthStatus};
+#[cfg(feature = "repl")]
+use reedline::{Reedline, Signal};
+pub use session::{DisplayConfig, ReplSession};
+
+use crate::Result;
 
 /// Run the interactive REPL
 ///
@@ -62,7 +65,10 @@ fn run_interactive() -> Result<()> {
     let mut line_editor = create_editor(&session)?;
     let prompt = AndonPrompt::new();
 
-    println!("alimentar {} - Interactive Data Explorer", env!("CARGO_PKG_VERSION"));
+    println!(
+        "alimentar {} - Interactive Data Explorer",
+        env!("CARGO_PKG_VERSION")
+    );
     println!("Type 'help' for commands, 'quit' to exit\n");
 
     loop {
@@ -117,7 +123,10 @@ fn run_non_interactive() -> Result<()> {
 
     let mut session = ReplSession::new();
 
-    println!("alimentar {} - Interactive Data Explorer", env!("CARGO_PKG_VERSION"));
+    println!(
+        "alimentar {} - Interactive Data Explorer",
+        env!("CARGO_PKG_VERSION")
+    );
     println!("Type 'help' for commands, 'quit' to exit\n");
 
     let stdin = std::io::stdin();
@@ -158,7 +167,7 @@ fn run_non_interactive() -> Result<()> {
 
 #[cfg(feature = "repl")]
 fn create_editor(session: &ReplSession) -> Result<Reedline> {
-    use reedline::{Reedline, FileBackedHistory};
+    use reedline::{FileBackedHistory, Reedline};
 
     let history_path = dirs_home().join(".alimentar_history");
     let history = FileBackedHistory::with_file(1000, history_path)
@@ -313,19 +322,35 @@ mod tests {
     #[test]
     fn test_parse_quality_score_command() {
         let cmd = CommandParser::parse("quality score").unwrap();
-        assert!(matches!(cmd, ReplCommand::QualityScore { suggest: false, json: false, badge: false }));
+        assert!(matches!(
+            cmd,
+            ReplCommand::QualityScore {
+                suggest: false,
+                json: false,
+                badge: false
+            }
+        ));
     }
 
     #[test]
     fn test_parse_quality_score_with_flags() {
         let cmd = CommandParser::parse("quality score --suggest --json").unwrap();
-        assert!(matches!(cmd, ReplCommand::QualityScore { suggest: true, json: true, badge: false }));
+        assert!(matches!(
+            cmd,
+            ReplCommand::QualityScore {
+                suggest: true,
+                json: true,
+                badge: false
+            }
+        ));
     }
 
     #[test]
     fn test_parse_drift_detect_command() {
         let cmd = CommandParser::parse("drift detect baseline.parquet").unwrap();
-        assert!(matches!(cmd, ReplCommand::DriftDetect { reference } if reference == "baseline.parquet"));
+        assert!(
+            matches!(cmd, ReplCommand::DriftDetect { reference } if reference == "baseline.parquet")
+        );
     }
 
     #[test]
@@ -459,7 +484,7 @@ mod tests {
         let prompt_str = AndonPrompt::render(&session);
 
         assert!(prompt_str.contains("alimentar"));
-        assert!(!prompt_str.contains('['));  // No dataset indicator
+        assert!(!prompt_str.contains('[')); // No dataset indicator
     }
 
     #[test]
@@ -529,10 +554,13 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────────
 
     fn create_test_dataset() -> ArrowDataset {
-        use arrow::array::{Int32Array, StringArray};
-        use arrow::datatypes::{DataType, Field, Schema};
-        use arrow::record_batch::RecordBatch;
         use std::sync::Arc;
+
+        use arrow::{
+            array::{Int32Array, StringArray},
+            datatypes::{DataType, Field, Schema},
+            record_batch::RecordBatch,
+        };
 
         let schema = Schema::new(vec![
             Field::new("id", DataType::Int32, false),
@@ -594,7 +622,7 @@ mod tests {
         // Both should create valid prompts
         let session = ReplSession::new();
         let render1 = AndonPrompt::render(&session);
-        let _ = (prompt1, prompt2);  // Use them
+        let _ = (prompt1, prompt2); // Use them
         assert!(render1.contains("alimentar"));
     }
 

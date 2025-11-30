@@ -115,6 +115,20 @@
 - [Streaming Large Files](./examples/streaming.md)
 - [Registry Workflow](./examples/registry-workflow.md)
 
+# 100 Executable Examples
+
+- [Overview](./100-examples/overview.md)
+- [Basic Loading (1-10)](./100-examples/basic-loading.md)
+- [DataLoader & Batching (11-20)](./100-examples/dataloader-batching.md)
+- [Streaming & Memory (21-30)](./100-examples/streaming-memory.md)
+- [Transforms Pipeline (31-45)](./100-examples/transforms-pipeline.md)
+- [Quality & Validation (46-55)](./100-examples/quality-validation.md)
+- [Drift Detection (56-65)](./100-examples/drift-detection.md)
+- [Federated & Splitting (66-75)](./100-examples/federated-splitting.md)
+- [HuggingFace Hub (76-85)](./100-examples/huggingface-hub.md)
+- [CLI & REPL (86-95)](./100-examples/cli-repl.md)
+- [Edge Cases & WASM (96-100)](./100-examples/edge-cases-wasm.md)
+
 # Development Guide
 
 - [Contributing](./development/contributing.md)

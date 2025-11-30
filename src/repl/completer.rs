@@ -7,8 +7,7 @@
 //! - [6] Myers (1990). Taxonomies of Visual Programming
 //! - [13] Ko et al. (2004). Six Learning Barriers
 
-use super::commands::CommandParser;
-use super::session::ReplSession;
+use super::{commands::CommandParser, session::ReplSession};
 
 /// Schema-aware completer for Poka-Yoke input validation
 #[derive(Debug)]
@@ -33,7 +32,10 @@ impl SchemaAwareCompleter {
                 .map(|s| (*s).to_string())
                 .collect(),
             subcommands: vec![
-                ("quality".to_string(), vec!["check".to_string(), "score".to_string()]),
+                (
+                    "quality".to_string(),
+                    vec!["check".to_string(), "score".to_string()],
+                ),
                 ("drift".to_string(), vec!["detect".to_string()]),
             ],
             columns: session.column_names(),
@@ -105,10 +107,7 @@ impl SchemaAwareCompleter {
                 // Suggest formats
                 vec!["csv".to_string(), "parquet".to_string(), "json".to_string()]
                     .into_iter()
-                    .filter(|f| {
-                        args.first()
-                            .map_or(true, |prefix| f.starts_with(*prefix))
-                    })
+                    .filter(|f| args.first().map_or(true, |prefix| f.starts_with(*prefix)))
                     .collect()
             }
             "select" | "drop" => {
@@ -132,10 +131,7 @@ impl SchemaAwareCompleter {
                     "export".to_string(),
                 ]
                 .into_iter()
-                .filter(|t| {
-                    args.first()
-                        .map_or(true, |prefix| t.starts_with(*prefix))
-                })
+                .filter(|t| args.first().map_or(true, |prefix| t.starts_with(*prefix)))
                 .collect()
             }
             _ => vec![],
@@ -205,12 +201,16 @@ impl Completer for SchemaAwareCompleter {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use arrow::{
+        array::{Int32Array, StringArray},
+        datatypes::{DataType, Field, Schema as ArrowSchema},
+        record_batch::RecordBatch,
+    };
+
     use super::*;
     use crate::ArrowDataset;
-    use arrow::array::{Int32Array, StringArray};
-    use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
-    use arrow::record_batch::RecordBatch;
-    use std::sync::Arc;
 
     fn create_test_dataset() -> ArrowDataset {
         let schema = Arc::new(ArrowSchema::new(vec![
@@ -249,7 +249,9 @@ mod tests {
         let session = ReplSession::new();
         let completer = SchemaAwareCompleter::new(&session);
         let completions = completer.complete("he");
-        assert!(completions.contains(&"help".to_string()) || completions.contains(&"head".to_string()));
+        assert!(
+            completions.contains(&"help".to_string()) || completions.contains(&"head".to_string())
+        );
     }
 
     #[test]
@@ -257,7 +259,10 @@ mod tests {
         let session = ReplSession::new();
         let completer = SchemaAwareCompleter::new(&session);
         let completions = completer.complete("quality ");
-        assert!(completions.contains(&"check".to_string()) || completions.contains(&"score".to_string()));
+        assert!(
+            completions.contains(&"check".to_string())
+                || completions.contains(&"score".to_string())
+        );
     }
 
     #[test]

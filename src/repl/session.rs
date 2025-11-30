@@ -3,16 +3,14 @@
 //! Stateful session that holds loaded datasets in memory, eliminating
 //! the "Muda of Processing" (re-loading large datasets for every minor query).
 
-use std::collections::HashMap;
-use std::fmt::Write;
-use std::path::Path;
-use std::sync::Arc;
-
-use crate::{ArrowDataset, Result, Error};
-use crate::dataset::Dataset;
-use crate::quality::{QualityChecker, QualityScore, LetterGrade};
+use std::{collections::HashMap, fmt::Write, path::Path, sync::Arc};
 
 use super::commands::ReplCommand;
+use crate::{
+    dataset::Dataset,
+    quality::{LetterGrade, QualityChecker, QualityScore},
+    ArrowDataset, Error, Result,
+};
 
 /// Display configuration for REPL output (Mieruka - Visual Control)
 #[derive(Debug, Clone)]
@@ -138,7 +136,10 @@ impl ReplSession {
 
     /// Build a basic checklist from quality report
     #[allow(clippy::unused_self)]
-    fn build_basic_checklist(&self, report: &crate::quality::QualityReport) -> Vec<crate::quality::ChecklistItem> {
+    fn build_basic_checklist(
+        &self,
+        report: &crate::quality::QualityReport,
+    ) -> Vec<crate::quality::ChecklistItem> {
         use crate::quality::{ChecklistItem, Severity};
 
         let mut items = Vec::new();
@@ -339,9 +340,11 @@ impl ReplSession {
             ReplCommand::Head { n } => self.cmd_head(n),
             ReplCommand::Schema => self.cmd_schema(),
             ReplCommand::QualityCheck => self.cmd_quality_check(),
-            ReplCommand::QualityScore { suggest, json, badge } => {
-                self.cmd_quality_score(suggest, json, badge)
-            }
+            ReplCommand::QualityScore {
+                suggest,
+                json,
+                badge,
+            } => self.cmd_quality_score(suggest, json, badge),
             ReplCommand::DriftDetect { reference } => self.cmd_drift_detect(&reference),
             ReplCommand::Convert { format } => self.cmd_convert(&format),
             ReplCommand::Datasets => self.cmd_datasets(),
@@ -363,13 +366,20 @@ impl ReplSession {
             .to_string();
 
         self.load_dataset(&name, dataset);
-        println!("Loaded '{}' ({} rows)", name, self.active_row_count().unwrap_or(0));
+        println!(
+            "Loaded '{}' ({} rows)",
+            name,
+            self.active_row_count().unwrap_or(0)
+        );
         Ok(())
     }
 
     fn cmd_info(&self) -> Result<()> {
         let dataset = self.require_active()?;
-        println!("Dataset: {}", self.active_name.as_deref().unwrap_or("unnamed"));
+        println!(
+            "Dataset: {}",
+            self.active_name.as_deref().unwrap_or("unnamed")
+        );
         println!("Rows: {}", dataset.len());
         println!("Columns: {}", dataset.schema().fields().len());
 
@@ -402,7 +412,10 @@ impl ReplSession {
             }
         }
 
-        println!("{}", arrow::util::pretty::pretty_format_batches(&output_batches)?);
+        println!(
+            "{}",
+            arrow::util::pretty::pretty_format_batches(&output_batches)?
+        );
         Ok(())
     }
 
@@ -412,7 +425,11 @@ impl ReplSession {
 
         println!("Schema ({} columns):", schema.fields().len());
         for field in schema.fields() {
-            let nullable = if field.is_nullable() { "nullable" } else { "not null" };
+            let nullable = if field.is_nullable() {
+                "nullable"
+            } else {
+                "not null"
+            };
             println!("  {}: {} ({})", field.name(), field.data_type(), nullable);
         }
 
@@ -444,7 +461,10 @@ impl ReplSession {
             } else if badge {
                 println!("{}", cache.score.badge_url());
             } else {
-                println!("Quality Score: {} ({:.1}/100)", cache.score.grade, cache.score.score);
+                println!(
+                    "Quality Score: {} ({:.1}/100)",
+                    cache.score.grade, cache.score.score
+                );
                 println!("Decision: {}", cache.score.grade.publication_decision());
 
                 if suggest {
@@ -475,12 +495,18 @@ impl ReplSession {
 
         println!("Drift Detection Report:");
         println!("  Columns analyzed: {}", report.column_scores.len());
-        println!("  Drifted columns: {}", report.column_scores.values().filter(|d| d.drift_detected).count());
+        println!(
+            "  Drifted columns: {}",
+            report
+                .column_scores
+                .values()
+                .filter(|d| d.drift_detected)
+                .count()
+        );
 
         for (name, drift) in &report.column_scores {
             if drift.drift_detected {
-                println!("  {} [{:?}]: {:.2?}",
-                    name, drift.severity, drift.p_value);
+                println!("  {} [{:?}]: {:.2?}", name, drift.severity, drift.p_value);
             }
         }
 
@@ -510,7 +536,11 @@ impl ReplSession {
         } else {
             println!("Loaded datasets:");
             for name in self.datasets.keys() {
-                let marker = if Some(name) == self.active_name.as_ref() { "* " } else { "  " };
+                let marker = if Some(name) == self.active_name.as_ref() {
+                    "* "
+                } else {
+                    "  "
+                };
                 if let Some(ds) = self.datasets.get(name) {
                     println!("{}{} ({} rows)", marker, name, ds.len());
                 }
@@ -622,7 +652,10 @@ impl ReplSession {
                     Err(Error::NotFound("No quality data available".to_string()))
                 }
             }
-            _ => Err(Error::InvalidFormat(format!("Unknown export type: {}", what))),
+            _ => Err(Error::InvalidFormat(format!(
+                "Unknown export type: {}",
+                what
+            ))),
         }
     }
 
@@ -630,16 +663,23 @@ impl ReplSession {
         let _ = self.require_active()?;
         // Basic validation - check if schema file exists
         if std::path::Path::new(schema_path).exists() {
-            println!("Validation against {} - Feature in development", schema_path);
+            println!(
+                "Validation against {} - Feature in development",
+                schema_path
+            );
             Ok(())
         } else {
-            Err(Error::NotFound(format!("Schema file not found: {}", schema_path)))
+            Err(Error::NotFound(format!(
+                "Schema file not found: {}",
+                schema_path
+            )))
         }
     }
 
     fn require_active(&self) -> Result<&Arc<ArrowDataset>> {
-        self.active_dataset()
-            .ok_or_else(|| Error::NotFound("No active dataset. Use 'load <file>' first.".to_string()))
+        self.active_dataset().ok_or_else(|| {
+            Error::NotFound("No active dataset. Use 'load <file>' first.".to_string())
+        })
     }
 }
 
@@ -676,11 +716,15 @@ fn load_dataset_from_path(path: &str) -> Result<ArrowDataset> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use arrow::array::{Float64Array, Int32Array, StringArray};
-    use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
-    use arrow::record_batch::RecordBatch;
     use std::sync::Arc;
+
+    use arrow::{
+        array::{Float64Array, Int32Array, StringArray},
+        datatypes::{DataType, Field, Schema as ArrowSchema},
+        record_batch::RecordBatch,
+    };
+
+    use super::*;
 
     fn create_test_dataset() -> ArrowDataset {
         let schema = Arc::new(ArrowSchema::new(vec![
@@ -693,7 +737,13 @@ mod tests {
             schema.clone(),
             vec![
                 Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
-                Arc::new(StringArray::from(vec![Some("a"), Some("b"), None, Some("d"), Some("e")])),
+                Arc::new(StringArray::from(vec![
+                    Some("a"),
+                    Some("b"),
+                    None,
+                    Some("d"),
+                    Some("e"),
+                ])),
                 Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0])),
             ],
         )
@@ -878,7 +928,10 @@ mod tests {
     #[test]
     fn test_session_repl_to_batch_load() {
         let session = ReplSession::new();
-        assert_eq!(session.repl_to_batch("load test.parquet"), "load test.parquet");
+        assert_eq!(
+            session.repl_to_batch("load test.parquet"),
+            "load test.parquet"
+        );
     }
 
     #[test]
@@ -886,7 +939,10 @@ mod tests {
         let mut session = ReplSession::new();
         session.load_dataset("data.parquet", create_test_dataset());
 
-        assert_eq!(session.repl_to_batch("quality check"), "quality check data.parquet");
+        assert_eq!(
+            session.repl_to_batch("quality check"),
+            "quality check data.parquet"
+        );
     }
 
     #[test]
@@ -1084,28 +1140,36 @@ mod tests {
     #[test]
     fn test_execute_help_quality() {
         let mut session = ReplSession::new();
-        let result = session.execute(ReplCommand::Help { topic: Some("quality".to_string()) });
+        let result = session.execute(ReplCommand::Help {
+            topic: Some("quality".to_string()),
+        });
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_execute_help_drift() {
         let mut session = ReplSession::new();
-        let result = session.execute(ReplCommand::Help { topic: Some("drift".to_string()) });
+        let result = session.execute(ReplCommand::Help {
+            topic: Some("drift".to_string()),
+        });
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_execute_help_export() {
         let mut session = ReplSession::new();
-        let result = session.execute(ReplCommand::Help { topic: Some("export".to_string()) });
+        let result = session.execute(ReplCommand::Help {
+            topic: Some("export".to_string()),
+        });
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_execute_help_unknown() {
         let mut session = ReplSession::new();
-        let result = session.execute(ReplCommand::Help { topic: Some("unknown".to_string()) });
+        let result = session.execute(ReplCommand::Help {
+            topic: Some("unknown".to_string()),
+        });
         assert!(result.is_ok());
     }
 
@@ -1114,7 +1178,10 @@ mod tests {
         let mut session = ReplSession::new();
         session.load_dataset("test", create_test_dataset());
 
-        let result = session.execute(ReplCommand::Export { what: "quality".to_string(), json: false });
+        let result = session.execute(ReplCommand::Export {
+            what: "quality".to_string(),
+            json: false,
+        });
         assert!(result.is_ok());
     }
 
@@ -1123,14 +1190,20 @@ mod tests {
         let mut session = ReplSession::new();
         session.load_dataset("test", create_test_dataset());
 
-        let result = session.execute(ReplCommand::Export { what: "quality".to_string(), json: true });
+        let result = session.execute(ReplCommand::Export {
+            what: "quality".to_string(),
+            json: true,
+        });
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_execute_export_quality_no_cache() {
         let mut session = ReplSession::new();
-        let result = session.execute(ReplCommand::Export { what: "quality".to_string(), json: false });
+        let result = session.execute(ReplCommand::Export {
+            what: "quality".to_string(),
+            json: false,
+        });
         assert!(result.is_err());
     }
 
@@ -1139,7 +1212,10 @@ mod tests {
         let mut session = ReplSession::new();
         session.load_dataset("test", create_test_dataset());
 
-        let result = session.execute(ReplCommand::Export { what: "unknown".to_string(), json: false });
+        let result = session.execute(ReplCommand::Export {
+            what: "unknown".to_string(),
+            json: false,
+        });
         assert!(result.is_err());
     }
 
@@ -1148,7 +1224,9 @@ mod tests {
         let mut session = ReplSession::new();
         session.load_dataset("test", create_test_dataset());
 
-        let result = session.execute(ReplCommand::Validate { schema: "nonexistent.json".to_string() });
+        let result = session.execute(ReplCommand::Validate {
+            schema: "nonexistent.json".to_string(),
+        });
         assert!(result.is_err());
     }
 
@@ -1157,7 +1235,9 @@ mod tests {
         let mut session = ReplSession::new();
         session.load_dataset("test", create_test_dataset());
 
-        let result = session.execute(ReplCommand::Convert { format: "invalid".to_string() });
+        let result = session.execute(ReplCommand::Convert {
+            format: "invalid".to_string(),
+        });
         assert!(result.is_err());
     }
 
@@ -1173,14 +1253,18 @@ mod tests {
         let mut session = ReplSession::new();
         session.load_dataset("test", create_test_dataset());
 
-        let result = session.execute(ReplCommand::Use { name: "test".to_string() });
+        let result = session.execute(ReplCommand::Use {
+            name: "test".to_string(),
+        });
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_execute_use_not_found() {
         let mut session = ReplSession::new();
-        let result = session.execute(ReplCommand::Use { name: "nonexistent".to_string() });
+        let result = session.execute(ReplCommand::Use {
+            name: "nonexistent".to_string(),
+        });
         assert!(result.is_err());
     }
 

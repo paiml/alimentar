@@ -275,7 +275,11 @@ mod tests {
             .unwrap();
         for i in 0..pixel_col.len() {
             let val = pixel_col.value(i);
-            assert!((0.0..=1.0).contains(&val), "Pixel value {} out of range", val);
+            assert!(
+                (0.0..=1.0).contains(&val),
+                "Pixel value {} out of range",
+                val
+            );
         }
     }
 

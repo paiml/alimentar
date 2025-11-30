@@ -2,11 +2,13 @@
 //!
 //! Command-line interface for alimentar operations.
 
-
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
 };
+
+use arrow::util::pretty::print_batches;
+use clap::{Parser, Subcommand};
 
 use crate::{
     backend::LocalBackend,
@@ -20,8 +22,6 @@ use crate::{
     split::DatasetSplit,
     ArrowDataset, Dataset,
 };
-use arrow::util::pretty::print_batches;
-use clap::{Parser, Subcommand};
 
 /// alimentar - Data Loading, Distribution and Tooling in Pure Rust
 #[derive(Parser)]
@@ -333,7 +333,8 @@ enum QualityCommands {
     Score {
         /// Path to dataset file
         path: PathBuf,
-        /// Quality profile to use (default, doctest-corpus, ml-training, time-series)
+        /// Quality profile to use (default, doctest-corpus, ml-training,
+        /// time-series)
         #[arg(short, long, default_value = "default")]
         profile: String,
         /// Show improvement suggestions for failed checks
@@ -459,7 +460,6 @@ enum DoctestCommands {
 
 #[allow(clippy::too_many_lines)]
 /// Run the alimentar CLI.
-///
 pub fn run() -> ExitCode {
     let cli = Cli::parse();
 
@@ -487,7 +487,14 @@ pub fn run() -> ExitCode {
                 message,
                 readme,
                 private,
-            } => cmd_hub_push(&input, &repo_id, path_in_repo.as_deref(), &message, readme.as_ref(), private),
+            } => cmd_hub_push(
+                &input,
+                &repo_id,
+                path_in_repo.as_deref(),
+                &message,
+                readme.as_ref(),
+                private,
+            ),
         },
         Commands::Registry(registry_cmd) => match registry_cmd {
             RegistryCommands::Init { path } => cmd_registry_init(&path),
@@ -1160,8 +1167,7 @@ fn cmd_drift_detect(
         });
         println!(
             "{}",
-            serde_json::to_string_pretty(&json)
-                .map_err(|e| crate::Error::Format(e.to_string()))?
+            serde_json::to_string_pretty(&json).map_err(|e| crate::Error::Format(e.to_string()))?
         );
     } else {
         // Text output
@@ -1410,8 +1416,8 @@ fn cmd_drift_compare(
             }).collect::<Vec<_>>()
         });
 
-        let json_str = serde_json::to_string_pretty(&json)
-            .map_err(|e| crate::Error::Format(e.to_string()))?;
+        let json_str =
+            serde_json::to_string_pretty(&json).map_err(|e| crate::Error::Format(e.to_string()))?;
         println!("{}", json_str);
     } else {
         // Text format
@@ -1497,8 +1503,7 @@ fn cmd_quality_check(
         });
         println!(
             "{}",
-            serde_json::to_string_pretty(&json)
-                .map_err(|e| crate::Error::Format(e.to_string()))?
+            serde_json::to_string_pretty(&json).map_err(|e| crate::Error::Format(e.to_string()))?
         );
     } else {
         println!("Data Quality Report");
@@ -1628,24 +1633,39 @@ fn cmd_quality_score(
         };
 
         println!("═══════════════════════════════════════════════════════════════");
-        println!("  Data Quality Score: {} {} ({:.1}%)  ", grade_symbol, score.grade, score.score);
+        println!(
+            "  Data Quality Score: {} {} ({:.1}%)  ",
+            grade_symbol, score.grade, score.score
+        );
         println!("  Profile: {}  ", profile.name);
         println!("  Decision: {}  ", score.grade.publication_decision());
         println!("═══════════════════════════════════════════════════════════════");
         println!();
         println!("File: {}", path.display());
-        println!("Points: {:.1} / {:.1}", score.points_earned, score.max_points);
+        println!(
+            "Points: {:.1} / {:.1}",
+            score.points_earned, score.max_points
+        );
         println!();
 
         // Severity breakdown
         println!("Severity Breakdown:");
-        for severity in [Severity::Critical, Severity::High, Severity::Medium, Severity::Low] {
+        for severity in [
+            Severity::Critical,
+            Severity::High,
+            Severity::Medium,
+            Severity::Low,
+        ] {
             if let Some(stats) = score.severity_breakdown.get(&severity) {
                 let status = if stats.failed == 0 { "✓" } else { "✗" };
                 println!(
                     "  {} {:8}: {}/{} passed ({:.1}/{:.1} pts)",
-                    status, format!("{}", severity), stats.passed, stats.total,
-                    stats.points_earned, stats.max_points
+                    status,
+                    format!("{}", severity),
+                    stats.passed,
+                    stats.total,
+                    stats.points_earned,
+                    stats.max_points
                 );
             }
         }
@@ -1721,7 +1741,10 @@ fn cmd_quality_profiles() -> crate::Result<()> {
                 println!("    Nullable columns: {:?}", cols);
             }
             println!("    Max null ratio: {:.0}%", profile.max_null_ratio * 100.0);
-            println!("    Max duplicate ratio: {:.0}%", profile.max_duplicate_ratio * 100.0);
+            println!(
+                "    Max duplicate ratio: {:.0}%",
+                profile.max_duplicate_ratio * 100.0
+            );
             println!();
         }
     }
@@ -1757,21 +1780,25 @@ fn build_checklist_from_report(
     // Check 2: No empty schema
     let has_columns = report.column_count > 0;
     items.push(
-        ChecklistItem::new(id, "Schema has columns defined", Severity::Critical, has_columns)
-            .with_suggestion("Verify parser is extracting fields correctly"),
+        ChecklistItem::new(
+            id,
+            "Schema has columns defined",
+            Severity::Critical,
+            has_columns,
+        )
+        .with_suggestion("Verify parser is extracting fields correctly"),
     );
     id += 1;
 
     // Check 3: No unexpected constant columns (would break training)
-    // Filter out columns that the profile expects to be constant (e.g., source, version)
-    // Also allow nullable columns to be all-null (constant null is OK for optional fields)
+    // Filter out columns that the profile expects to be constant (e.g., source,
+    // version) Also allow nullable columns to be all-null (constant null is OK
+    // for optional fields)
     let unexpected_constant_cols: Vec<String> = report
         .columns
         .iter()
         .filter(|(name, c): &(&String, &ColumnQuality)| {
-            c.is_constant()
-                && !profile.is_expected_constant(name)
-                && !profile.is_nullable(name)
+            c.is_constant() && !profile.is_expected_constant(name) && !profile.is_nullable(name)
         })
         .map(|(n, _)| n.clone())
         .collect();
@@ -1812,7 +1839,10 @@ fn build_checklist_from_report(
     items.push(
         ChecklistItem::new(
             id,
-            format!("Duplicate ratio <= 5% (actual: {:.1}%)", duplicate_ratio * 100.0),
+            format!(
+                "Duplicate ratio <= 5% (actual: {:.1}%)",
+                duplicate_ratio * 100.0
+            ),
             Severity::High,
             low_duplicates,
         )
@@ -1872,7 +1902,8 @@ fn build_checklist_from_report(
     );
     id += 1;
 
-    // Check 8: No columns with >10% nulls (stricter, except nullable columns per profile)
+    // Check 8: No columns with >10% nulls (stricter, except nullable columns per
+    // profile)
     let moderate_null_cols: Vec<String> = report
         .columns
         .iter()
@@ -1889,10 +1920,7 @@ fn build_checklist_from_report(
             Severity::Medium,
             low_null_ratio,
         )
-        .with_suggestion(format!(
-            "Consider imputation for: {:?}",
-            moderate_null_cols
-        )),
+        .with_suggestion(format!("Consider imputation for: {:?}", moderate_null_cols)),
     );
     id += 1;
 
@@ -2013,8 +2041,8 @@ fn cmd_fed_manifest(
 
     match format {
         "binary" | "bin" => {
-            let bytes = rmp_serde::to_vec(&manifest)
-                .map_err(|e| crate::Error::Format(e.to_string()))?;
+            let bytes =
+                rmp_serde::to_vec(&manifest).map_err(|e| crate::Error::Format(e.to_string()))?;
             std::fs::write(output, bytes).map_err(|e| crate::Error::io(e, output))?;
         }
         _ => {
@@ -2199,8 +2227,8 @@ fn cmd_fed_verify(manifests: &[PathBuf], format: &str) -> crate::Result<()> {
             }).collect::<Vec<_>>()
         });
 
-        let json_str = serde_json::to_string_pretty(&json)
-            .map_err(|e| crate::Error::Format(e.to_string()))?;
+        let json_str =
+            serde_json::to_string_pretty(&json).map_err(|e| crate::Error::Format(e.to_string()))?;
         println!("{}", json_str);
     } else {
         // Text format
@@ -2320,9 +2348,7 @@ fn cmd_doctest_merge(inputs: &[PathBuf], output: &Path) -> crate::Result<()> {
     }
 
     if all_batches.is_empty() {
-        return Err(crate::Error::invalid_config(
-            "No data found in input files",
-        ));
+        return Err(crate::Error::invalid_config("No data found in input files"));
     }
 
     // Create merged dataset
@@ -4132,12 +4158,18 @@ mod tests {
 
     #[test]
     fn test_parse_sketch_type_tdigest() {
-        assert!(matches!(parse_sketch_type("tdigest"), Some(SketchType::TDigest)));
+        assert!(matches!(
+            parse_sketch_type("tdigest"),
+            Some(SketchType::TDigest)
+        ));
     }
 
     #[test]
     fn test_parse_sketch_type_ddsketch() {
-        assert!(matches!(parse_sketch_type("ddsketch"), Some(SketchType::DDSketch)));
+        assert!(matches!(
+            parse_sketch_type("ddsketch"),
+            Some(SketchType::DDSketch)
+        ));
     }
 
     #[test]
@@ -4152,13 +4184,12 @@ mod tests {
             .unwrap_or_else(|| panic!("Should create temp dir"));
         let path = temp_dir.path().join("output.parquet");
 
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int32, false),
-        ]));
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
         let batch = arrow::array::RecordBatch::try_new(
             schema,
             vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
-        ).unwrap();
+        )
+        .unwrap();
         let dataset = ArrowDataset::from_batch(batch).unwrap();
 
         let result = save_dataset(&dataset, &path);
@@ -4172,13 +4203,12 @@ mod tests {
             .unwrap_or_else(|| panic!("Should create temp dir"));
         let path = temp_dir.path().join("output.csv");
 
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int32, false),
-        ]));
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
         let batch = arrow::array::RecordBatch::try_new(
             schema,
             vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
-        ).unwrap();
+        )
+        .unwrap();
         let dataset = ArrowDataset::from_batch(batch).unwrap();
 
         let result = save_dataset(&dataset, &path);
@@ -4192,13 +4222,12 @@ mod tests {
             .unwrap_or_else(|| panic!("Should create temp dir"));
         let path = temp_dir.path().join("output.json");
 
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int32, false),
-        ]));
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
         let batch = arrow::array::RecordBatch::try_new(
             schema,
             vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
-        ).unwrap();
+        )
+        .unwrap();
         let dataset = ArrowDataset::from_batch(batch).unwrap();
 
         let result = save_dataset(&dataset, &path);
@@ -4212,13 +4241,12 @@ mod tests {
             .unwrap_or_else(|| panic!("Should create temp dir"));
         let path = temp_dir.path().join("output.xyz");
 
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int32, false),
-        ]));
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
         let batch = arrow::array::RecordBatch::try_new(
             schema,
             vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
-        ).unwrap();
+        )
+        .unwrap();
         let dataset = ArrowDataset::from_batch(batch).unwrap();
 
         let result = save_dataset(&dataset, &path);
@@ -4441,13 +4469,16 @@ mod tests {
         let sketch_path = temp_dir.path().join("sketch.json");
 
         // Create dataset with numeric column
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("value", DataType::Float64, false),
-        ]));
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "value",
+            DataType::Float64,
+            false,
+        )]));
         let batch = arrow::array::RecordBatch::try_new(
             schema,
             vec![Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]))],
-        ).unwrap();
+        )
+        .unwrap();
         let dataset = ArrowDataset::from_batch(batch).unwrap();
         dataset.to_parquet(&data_path).unwrap();
 
@@ -4474,7 +4505,8 @@ mod tests {
             "MIT",
             "search,test",
             &registry_path,
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = cmd_registry_search("search", &registry_path);
         assert!(result.is_ok());
@@ -4511,7 +4543,8 @@ mod tests {
             "Apache-2.0",
             "info,test",
             &registry_path,
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = cmd_registry_show_info("info-dataset", &registry_path);
         assert!(result.is_ok());
@@ -4548,7 +4581,8 @@ mod tests {
             "MIT",
             "delete,test",
             &registry_path,
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = cmd_registry_delete("delete-test", "1.0.0", &registry_path);
         assert!(result.is_ok());
@@ -4576,8 +4610,12 @@ mod tests {
         let json_path = temp_dir.path().join("test.json");
 
         // Create a simple JSON Lines file
-        std::fs::write(&json_path, r#"{"id":1,"name":"foo"}
-{"id":2,"name":"bar"}"#).unwrap();
+        std::fs::write(
+            &json_path,
+            r#"{"id":1,"name":"foo"}
+{"id":2,"name":"bar"}"#,
+        )
+        .unwrap();
 
         let result = load_dataset(&json_path);
         assert!(result.is_ok());
@@ -4619,21 +4657,25 @@ mod tests {
         let merged = temp_dir.path().join("merged.json");
 
         // Create datasets with float column
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("value", DataType::Float64, false),
-        ]));
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "value",
+            DataType::Float64,
+            false,
+        )]));
 
         let batch1 = arrow::array::RecordBatch::try_new(
             schema.clone(),
             vec![Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]))],
-        ).unwrap();
+        )
+        .unwrap();
         let dataset1 = ArrowDataset::from_batch(batch1).unwrap();
         dataset1.to_parquet(&data1).unwrap();
 
         let batch2 = arrow::array::RecordBatch::try_new(
             schema,
             vec![Arc::new(Float64Array::from(vec![6.0, 7.0, 8.0, 9.0, 10.0]))],
-        ).unwrap();
+        )
+        .unwrap();
         let dataset2 = ArrowDataset::from_batch(batch2).unwrap();
         dataset2.to_parquet(&data2).unwrap();
 

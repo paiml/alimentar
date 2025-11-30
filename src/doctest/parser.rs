@@ -121,8 +121,12 @@ impl DocTestParser {
                 Self::get_function_context(line_num, &context_map, &lines);
 
             // Extract doctests from this docstring (with signature)
-            let doctests =
-                Self::extract_from_docstring_with_sig(content, module, &function_name, signature.as_deref());
+            let doctests = Self::extract_from_docstring_with_sig(
+                content,
+                module,
+                &function_name,
+                signature.as_deref(),
+            );
             results.extend(doctests);
         }
 
@@ -321,8 +325,9 @@ fn path_to_module(base: &Path, path: &Path) -> String {
         .to_string()
 }
 
-/// Detect if a line is prose continuation (documentation text) rather than code output.
-/// This is a Poka-Yoke (mistake-proofing) to prevent prose contamination in expected output.
+/// Detect if a line is prose continuation (documentation text) rather than code
+/// output. This is a Poka-Yoke (mistake-proofing) to prevent prose
+/// contamination in expected output.
 ///
 /// # Defense-in-Depth Algorithm (ALIM-R001 v2)
 ///
@@ -340,25 +345,49 @@ fn path_to_module(base: &Path, path: &Path) -> String {
 /// * `line` - The line to check
 ///
 /// # Returns
-/// `true` if the line appears to be prose/documentation, `false` if it looks like code output
+/// `true` if the line appears to be prose/documentation, `false` if it looks
+/// like code output
 #[must_use]
 pub fn is_prose_continuation(line: &str) -> bool {
     // ═══════════════════════════════════════════════════════════════════════════
     // Constants defined at top of function (clippy: items_after_statements)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// Docstring/ReStructuredText markers - unambiguous documentation indicators
+    /// Docstring/ReStructuredText markers - unambiguous documentation
+    /// indicators
     const DOC_MARKERS: &[&str] = &[
-        ":param", ":return", ":raises", ":type", ":rtype",
-        ":arg", ":args:", ":keyword", ":ivar", ":cvar",
+        ":param", ":return", ":raises", ":type", ":rtype", ":arg", ":args:", ":keyword", ":ivar",
+        ":cvar",
     ];
 
-    /// Common prose starters (stop words) - code output rarely starts with these
+    /// Common prose starters (stop words) - code output rarely starts with
+    /// these
     const PROSE_STARTERS: &[&str] = &[
-        "The ", "This ", "Note:", "Warning:", "Example:", "Examples:",
-        "See ", "If ", "When ", "For ", "An ", "A ", "It ",
-        "Returns ", "Raises ", "Args:", "Arguments:", "Parameters:",
-        "By ", "Use ", "Set ", "Get ", "You ", "We ", "They ",
+        "The ",
+        "This ",
+        "Note:",
+        "Warning:",
+        "Example:",
+        "Examples:",
+        "See ",
+        "If ",
+        "When ",
+        "For ",
+        "An ",
+        "A ",
+        "It ",
+        "Returns ",
+        "Raises ",
+        "Args:",
+        "Arguments:",
+        "Parameters:",
+        "By ",
+        "Use ",
+        "Set ",
+        "Get ",
+        "You ",
+        "We ",
+        "They ",
     ];
 
     /// Python literals that start with capital letters but are not prose
@@ -403,7 +432,8 @@ pub fn is_prose_continuation(line: &str) -> bool {
     // ═══════════════════════════════════════════════════════════════════════════
     if PROSE_STARTERS.iter().any(|s| trimmed.starts_with(s)) {
         // Exception: Don't filter if it contains code-like content
-        // e.g., "Type >>> to continue" - but allow trailing ellipsis (e.g., "If you...")
+        // e.g., "Type >>> to continue" - but allow trailing ellipsis (e.g., "If
+        // you...")
         if trimmed.contains(">>>") {
             return false;
         }

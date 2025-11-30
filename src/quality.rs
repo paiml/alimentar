@@ -45,8 +45,10 @@
 #![allow(clippy::unused_self)]
 #![allow(clippy::if_not_else)]
 
-use std::collections::{HashMap, HashSet};
-use std::fmt;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 use crate::{
     dataset::{ArrowDataset, Dataset},
@@ -488,7 +490,7 @@ impl QualityProfile {
             description: "Profile for Python doctest extraction datasets".to_string(),
             expected_constant_columns: expected_constants,
             nullable_columns: nullable,
-            max_null_ratio: 0.05, // Stricter for doctest data
+            max_null_ratio: 0.05,     // Stricter for doctest data
             max_duplicate_ratio: 0.3, // Some duplicate inputs are normal
             min_cardinality: 2,
             max_outlier_ratio: 0.05,
@@ -511,7 +513,7 @@ impl QualityProfile {
             description: "Profile for machine learning training datasets".to_string(),
             expected_constant_columns: HashSet::new(),
             nullable_columns: HashSet::new(),
-            max_null_ratio: 0.0, // No nulls allowed in training data
+            max_null_ratio: 0.0,      // No nulls allowed in training data
             max_duplicate_ratio: 0.8, // Higher tolerance for categorical features
             min_cardinality: 2,
             max_outlier_ratio: 0.1, // More tolerant of outliers
@@ -536,7 +538,7 @@ impl QualityProfile {
             max_null_ratio: 0.05,
             max_duplicate_ratio: 0.5,
             min_cardinality: 2,
-            max_outlier_ratio: 0.1, // Time series often have outliers
+            max_outlier_ratio: 0.1,       // Time series often have outliers
             max_duplicate_row_ratio: 0.0, // No duplicate rows (each timestamp unique)
             penalize_unexpected_constants: true,
             require_signature: false,
@@ -1852,9 +1854,11 @@ mod tests {
             let mut checklist: Vec<ChecklistItem> = (0..passed)
                 .map(|i| ChecklistItem::new(i as u8, "Test", Severity::Medium, true))
                 .collect();
-            checklist.extend((0..failed).map(|i| {
-                ChecklistItem::new((passed + i) as u8, "Test", Severity::Medium, false)
-            }));
+            checklist.extend(
+                (0..failed).map(|i| {
+                    ChecklistItem::new((passed + i) as u8, "Test", Severity::Medium, false)
+                }),
+            );
 
             let score = QualityScore::from_checklist(checklist);
             let badge = score.badge_url();

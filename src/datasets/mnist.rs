@@ -74,8 +74,9 @@ impl MnistDataset {
 
     /// Get stratified train/test split (80/20 for embedded data)
     ///
-    /// Uses stratified sampling to ensure all digit classes (0-9) are represented
-    /// in both train and test sets with proportional distribution.
+    /// Uses stratified sampling to ensure all digit classes (0-9) are
+    /// represented in both train and test sets with proportional
+    /// distribution.
     ///
     /// # Errors
     ///
@@ -278,8 +279,9 @@ fn draw_nine(img: &mut [f32]) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use arrow::array::Float32Array;
+
+    use super::*;
     use crate::Dataset;
 
     #[test]
@@ -363,7 +365,11 @@ mod tests {
             .unwrap();
         for i in 0..pixel_col.len() {
             let val = pixel_col.value(i);
-            assert!((0.0..=1.0).contains(&val), "Pixel value {} out of range", val);
+            assert!(
+                (0.0..=1.0).contains(&val),
+                "Pixel value {} out of range",
+                val
+            );
         }
     }
 
@@ -423,7 +429,11 @@ mod tests {
             let pattern = generate_digit_pattern(digit);
             assert_eq!(pattern.len(), 784, "Digit {} pattern wrong size", digit);
             let non_zero: usize = pattern.iter().filter(|&&p| p > 0.0).count();
-            assert!(non_zero > 0, "Digit {} pattern should have non-zero pixels", digit);
+            assert!(
+                non_zero > 0,
+                "Digit {} pattern should have non-zero pixels",
+                digit
+            );
         }
     }
 
@@ -448,13 +458,14 @@ mod tests {
         let mut img = vec![0.0f32; 784];
         set_pixel(&mut img, 30, 14, 1.0); // x out of bounds
         set_pixel(&mut img, 14, 30, 1.0); // y out of bounds
-        // Should not panic, and image should be unchanged
+                                          // Should not panic, and image should be unchanged
         let non_zero: usize = img.iter().filter(|&&p| p > 0.0).count();
         assert_eq!(non_zero, 0);
     }
 
-    /// TDD RED: Test that split is stratified - both train and test must contain all 10 digit classes
-    /// This test documents the bug: current sequential split puts 0-7 in train, 8-9 in test only
+    /// TDD RED: Test that split is stratified - both train and test must
+    /// contain all 10 digit classes This test documents the bug: current
+    /// sequential split puts 0-7 in train, 8-9 in test only
     #[test]
     fn test_mnist_split_is_stratified() {
         use std::collections::HashSet;
@@ -528,17 +539,21 @@ mod tests {
             .unwrap();
 
         // Count samples per class in training set
-        let mut train_counts = [0i32; 10];
+        let mut train_counts = [0usize; 10];
         for i in 0..train_labels.len() {
-            let label = train_labels.value(i) as usize;
-            train_counts[label] += 1;
+            let label = train_labels.value(i);
+            if (0..10).contains(&label) {
+                #[allow(clippy::cast_sign_loss)]
+                let idx = label as usize;
+                train_counts[idx] += 1;
+            }
         }
 
         // With 100 samples (10 per class) and 80% train split,
         // each class should have 8 samples in training (±1 for rounding)
         for (digit, &count) in train_counts.iter().enumerate() {
             assert!(
-                count >= 7 && count <= 9,
+                (7..=9).contains(&count),
                 "Digit {} has {} training samples, expected ~8",
                 digit,
                 count
