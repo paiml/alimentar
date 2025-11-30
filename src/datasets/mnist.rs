@@ -10,11 +10,8 @@ use arrow::{
     datatypes::{DataType, Field, Schema},
 };
 
-use super::{CanonicalDataset, DatasetSplit};
-use crate::{
-    transform::{Skip, Take, Transform},
-    ArrowDataset, Dataset, Result,
-};
+use super::CanonicalDataset;
+use crate::{split::DatasetSplit, ArrowDataset, Result};
 
 /// Load MNIST dataset (embedded 1000-sample subset)
 ///
@@ -75,27 +72,25 @@ impl MnistDataset {
         Ok(Self { data })
     }
 
-    /// Get train/test split (80/20 for embedded data)
+    /// Get stratified train/test split (80/20 for embedded data)
+    ///
+    /// Uses stratified sampling to ensure all digit classes (0-9) are represented
+    /// in both train and test sets with proportional distribution.
     ///
     /// # Errors
     ///
     /// Returns an error if the dataset is empty or split fails.
     pub fn split(&self) -> Result<DatasetSplit> {
-        let len = self.data.len();
-        let train_size = (len * 8) / 10;
-
-        let batch = self
-            .data
-            .get_batch(0)
-            .ok_or_else(|| crate::Error::empty_dataset("MNIST"))?;
-
-        let train_batch = Take::new(train_size).apply(batch.clone())?;
-        let test_batch = Skip::new(train_size).apply(batch.clone())?;
-
-        Ok(DatasetSplit::new(
-            ArrowDataset::from_batch(train_batch)?,
-            ArrowDataset::from_batch(test_batch)?,
-        ))
+        // Use stratified split to ensure all 10 digit classes appear in both sets
+        // Seed=42 for reproducibility
+        DatasetSplit::stratified(
+            &self.data,
+            "label",  // Stratify by label column
+            0.8,      // 80% training
+            0.2,      // 20% testing
+            None,     // No validation set
+            Some(42), // Deterministic seed for reproducibility
+        )
     }
 }
 
@@ -456,5 +451,98 @@ mod tests {
         // Should not panic, and image should be unchanged
         let non_zero: usize = img.iter().filter(|&&p| p > 0.0).count();
         assert_eq!(non_zero, 0);
+    }
+
+    /// TDD RED: Test that split is stratified - both train and test must contain all 10 digit classes
+    /// This test documents the bug: current sequential split puts 0-7 in train, 8-9 in test only
+    #[test]
+    fn test_mnist_split_is_stratified() {
+        use std::collections::HashSet;
+
+        let dataset = mnist().unwrap();
+        let split = dataset.split().unwrap();
+
+        // Extract labels from train set
+        let train_batch = split.train.get_batch(0).unwrap();
+        let train_labels = train_batch
+            .column(784)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
+        let train_label_set: HashSet<i32> = (0..train_labels.len())
+            .map(|i| train_labels.value(i))
+            .collect();
+
+        // Extract labels from test set
+        let test_batch = split.test.get_batch(0).unwrap();
+        let test_labels = test_batch
+            .column(784)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
+        let test_label_set: HashSet<i32> = (0..test_labels.len())
+            .map(|i| test_labels.value(i))
+            .collect();
+
+        // STRATIFIED REQUIREMENT: Both splits must contain all 10 digit classes
+        assert_eq!(
+            train_label_set.len(),
+            10,
+            "Train set must contain all 10 digit classes, got {:?}",
+            train_label_set
+        );
+        assert_eq!(
+            test_label_set.len(),
+            10,
+            "Test set must contain all 10 digit classes, got {:?}",
+            test_label_set
+        );
+
+        // Verify each class 0-9 is present in both sets
+        for digit in 0..10 {
+            assert!(
+                train_label_set.contains(&digit),
+                "Train set missing digit {}",
+                digit
+            );
+            assert!(
+                test_label_set.contains(&digit),
+                "Test set missing digit {}",
+                digit
+            );
+        }
+    }
+
+    /// Test that stratified split maintains approximate class balance
+    #[test]
+    fn test_mnist_split_maintains_class_balance() {
+        let dataset = mnist().unwrap();
+        let split = dataset.split().unwrap();
+
+        // Extract labels from train set
+        let train_batch = split.train.get_batch(0).unwrap();
+        let train_labels = train_batch
+            .column(784)
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap();
+
+        // Count samples per class in training set
+        let mut train_counts = [0i32; 10];
+        for i in 0..train_labels.len() {
+            let label = train_labels.value(i) as usize;
+            train_counts[label] += 1;
+        }
+
+        // With 100 samples (10 per class) and 80% train split,
+        // each class should have 8 samples in training (±1 for rounding)
+        for (digit, &count) in train_counts.iter().enumerate() {
+            assert!(
+                count >= 7 && count <= 9,
+                "Digit {} has {} training samples, expected ~8",
+                digit,
+                count
+            );
+        }
     }
 }
