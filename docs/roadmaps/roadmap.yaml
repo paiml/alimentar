@@ -34,3 +34,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-12
+  github_issue: 12
+  item_type: task
+  title: 'Issue #12'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-30T12:38:36.259391550+00:00
+  updated: 2025-11-30T12:38:36.259391550+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
