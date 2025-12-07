@@ -162,6 +162,145 @@ impl ArrowDataset {
         Ok(())
     }
 
+    /// Loads a dataset from an Arrow IPC file (Issue #2: Enhanced Data Loading)
+    ///
+    /// Arrow IPC (Inter-Process Communication) format enables zero-copy data
+    /// sharing. This is the native Arrow file format with optimal read
+    /// performance.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the Arrow IPC file (typically .arrow or .ipc
+    ///   extension)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The file cannot be opened
+    /// - The file is not valid Arrow IPC format
+    /// - The file is empty
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let dataset = ArrowDataset::from_ipc("data.arrow").unwrap();
+    /// ```
+    pub fn from_ipc(path: impl AsRef<Path>) -> Result<Self> {
+        use arrow::ipc::reader::FileReader;
+
+        let path = path.as_ref();
+        let file = std::fs::File::open(path).map_err(|e| Error::io(e, path))?;
+
+        let reader = FileReader::try_new(file, None).map_err(Error::Arrow)?;
+
+        let batches: Vec<RecordBatch> = reader
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Error::Arrow)?;
+
+        if batches.is_empty() {
+            return Err(Error::EmptyDataset);
+        }
+
+        Self::new(batches)
+    }
+
+    /// Saves the dataset to an Arrow IPC file (Issue #2: Enhanced Data Loading)
+    ///
+    /// Creates a file in Arrow IPC format, the native Arrow format.
+    /// This format provides optimal read performance for Arrow-based tools.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path for the output file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be created or writing fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// dataset.to_ipc("output.arrow").unwrap();
+    /// ```
+    pub fn to_ipc(&self, path: impl AsRef<Path>) -> Result<()> {
+        use arrow::ipc::writer::FileWriter;
+
+        let path = path.as_ref();
+        let file = std::fs::File::create(path).map_err(|e| Error::io(e, path))?;
+
+        let mut writer = FileWriter::try_new(file, &self.schema).map_err(Error::Arrow)?;
+
+        for batch in &self.batches {
+            writer.write(batch).map_err(Error::Arrow)?;
+        }
+
+        writer.finish().map_err(Error::Arrow)?;
+        Ok(())
+    }
+
+    /// Loads a dataset from an Arrow IPC stream file (Issue #2: Enhanced Data
+    /// Loading)
+    ///
+    /// Arrow IPC streaming format is designed for streaming scenarios where the
+    /// schema is sent first, followed by record batches. The file extension is
+    /// typically .arrows.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the Arrow IPC stream file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parsing fails or the file is empty.
+    pub fn from_ipc_stream(path: impl AsRef<Path>) -> Result<Self> {
+        use arrow::ipc::reader::StreamReader;
+
+        let path = path.as_ref();
+        let file = std::fs::File::open(path).map_err(|e| Error::io(e, path))?;
+
+        let reader = StreamReader::try_new(file, None).map_err(Error::Arrow)?;
+
+        let batches: Vec<RecordBatch> = reader
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Error::Arrow)?;
+
+        if batches.is_empty() {
+            return Err(Error::EmptyDataset);
+        }
+
+        Self::new(batches)
+    }
+
+    /// Saves the dataset to an Arrow IPC stream file (Issue #2: Enhanced Data
+    /// Loading)
+    ///
+    /// Creates a file in Arrow IPC streaming format. This format is suitable
+    /// for streaming scenarios and produces slightly smaller files than the
+    /// standard IPC file format.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path for the output file (typically .arrows extension)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be created or writing fails.
+    pub fn to_ipc_stream(&self, path: impl AsRef<Path>) -> Result<()> {
+        use arrow::ipc::writer::StreamWriter;
+
+        let path = path.as_ref();
+        let file = std::fs::File::create(path).map_err(|e| Error::io(e, path))?;
+
+        let mut writer = StreamWriter::try_new(file, &self.schema).map_err(Error::Arrow)?;
+
+        for batch in &self.batches {
+            writer.write(batch).map_err(Error::Arrow)?;
+        }
+
+        writer.finish().map_err(Error::Arrow)?;
+        Ok(())
+    }
+
     /// Loads a dataset from a CSV file.
     ///
     /// # Arguments
@@ -904,6 +1043,68 @@ mod tests {
             .unwrap_or_else(|| panic!("Should load csv"));
 
         assert_eq!(loaded.len(), dataset.len());
+    }
+
+    #[test]
+    fn test_ipc_roundtrip() {
+        let batch = create_test_batch(0, 10);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("test.arrow");
+
+        dataset
+            .to_ipc(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should write IPC"));
+
+        let loaded = ArrowDataset::from_ipc(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should load IPC"));
+
+        assert_eq!(loaded.len(), dataset.len());
+        assert_eq!(loaded.schema(), dataset.schema());
+    }
+
+    #[test]
+    fn test_ipc_stream_roundtrip() {
+        let batch = create_test_batch(0, 10);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("test.arrows");
+
+        dataset
+            .to_ipc_stream(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should write IPC stream"));
+
+        let loaded = ArrowDataset::from_ipc_stream(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should load IPC stream"));
+
+        assert_eq!(loaded.len(), dataset.len());
+        assert_eq!(loaded.schema(), dataset.schema());
+    }
+
+    #[test]
+    fn test_ipc_error_nonexistent() {
+        let result = ArrowDataset::from_ipc("/nonexistent/path/to/file.arrow");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ipc_stream_error_nonexistent() {
+        let result = ArrowDataset::from_ipc_stream("/nonexistent/path/to/file.arrows");
+        assert!(result.is_err());
     }
 
     #[test]
