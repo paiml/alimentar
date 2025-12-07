@@ -1,12 +1,46 @@
-# alimentar
+<div align="center">
 
-Data Loading, Distribution and Tooling in Pure Rust
+<p align="center">
+  <img src="docs/hero.svg" alt="alimentar" width="800">
+</p>
 
-[![Crates.io](https://img.shields.io/crates/v/alimentar.svg)](https://crates.io/crates/alimentar)
-[![Documentation](https://docs.rs/alimentar/badge.svg)](https://docs.rs/alimentar)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<h1 align="center">alimentar</h1>
 
-A sovereignty-first data loading library for the paiml AI stack. Provides HuggingFace-compatible functionality with local-first design.
+<p align="center">
+  <b>Data Loading, Distribution and Tooling in Pure Rust</b>
+</p>
+
+<p align="center">
+  <a href="https://crates.io/crates/alimentar"><img src="https://img.shields.io/crates/v/alimentar.svg" alt="Crates.io"></a>
+  <a href="https://docs.rs/alimentar"><img src="https://docs.rs/alimentar/badge.svg" alt="Documentation"></a>
+  <a href="https://github.com/paiml/alimentar/actions/workflows/ci.yml"><img src="https://github.com/paiml/alimentar/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
+</p>
+
+<p align="center">
+  <i>A sovereignty-first data loading library for the paiml AI stack. Provides HuggingFace-compatible functionality with local-first design.</i>
+</p>
+
+</div>
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Examples](#examples)
+  - [Apply Transforms](#apply-transforms)
+  - [Import from HuggingFace](#import-from-huggingface)
+  - [Use S3 Backend](#use-s3-backend)
+  - [Streaming Large Datasets](#streaming-large-datasets)
+- [Feature Flags](#feature-flags)
+- [CLI Usage](#cli-usage)
+- [Architecture](#architecture)
+- [Performance](#performance)
+- [Quality Standards](#quality-standards)
+- [Citation](#citation)
+- [License](#license)
+- [Related Projects](#related-projects)
 
 ## Features
 
