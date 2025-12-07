@@ -1,7 +1,7 @@
 <div align="center">
 
 <p align="center">
-  <img src="docs/hero.svg" alt="alimentar" width="800">
+  <img src=".github/alimentar-hero.svg" alt="alimentar" width="800">
 </p>
 
 <h1 align="center">alimentar</h1>

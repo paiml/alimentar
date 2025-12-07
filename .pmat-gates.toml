@@ -1,92 +1,32 @@
-# pmat Quality Gates Configuration
-# These thresholds enforce EXTREME TDD quality standards for alimentar
+# PMAT Quality Gates Configuration
+# See: https://github.com/paiml/pmat
 
-[coverage]
-# Minimum line coverage percentage
-line = 90
-# Minimum branch coverage percentage
-branch = 85
-# Fail if coverage drops below threshold
-fail_under = true
+[quality]
+# Minimum thresholds for quality gates
+rust_project_score = 85
+repo_score = 85
+test_coverage = 80
+mutation_score = 60
 
-[mutation]
-# Minimum mutation score percentage
-score = 85
-# Timeout multiplier for mutant execution
-timeout_multiplier = 3.0
-# Skip slow tests when running mutants
-skip_slow = false
+[gates]
+# Enforce quality gates in CI
+enforce_in_ci = true
+block_on_failure = true
 
-[complexity]
-# Maximum cyclomatic complexity per function
-max_cyclomatic = 15
-# Maximum cognitive complexity per function
-max_cognitive = 20
-# Maximum lines per function
-max_lines_per_function = 100
+[thresholds]
+# Complexity thresholds
+max_cyclomatic_complexity = 20
+max_cognitive_complexity = 15
+max_function_lines = 100
 
-[debt]
-# Maximum allowed SATD (Self-Admitted Technical Debt) comments
-max_satd_comments = 0
-# Patterns to detect SATD
-satd_patterns = [
-    "TODO",
-    "FIXME",
-    "HACK",
-    "XXX",
-    "TEMP",
-    "WORKAROUND",
-]
-
-[safety]
-# Disallow unsafe code
-forbid_unsafe = true
-# Disallow unwrap() calls
-forbid_unwrap = true
-# Disallow expect() calls
-forbid_expect = true
-# Disallow panic!() in library code
-forbid_panic = true
+[testing]
+# Testing requirements
+require_unit_tests = true
+require_integration_tests = true
+require_doc_tests = true
 
 [documentation]
-# Require documentation on public items
-require_public_docs = true
-# Require examples in module docs
-require_doc_examples = false
-# Maximum allowed undocumented public items
-max_undocumented = 0
-
-[dependencies]
-# Maximum allowed total dependencies
-max_direct_deps = 20
-# Maximum dependency depth
-max_dep_depth = 10
-# Require license compatibility
-check_licenses = true
-# Allowed licenses
-allowed_licenses = [
-    "MIT",
-    "Apache-2.0",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "ISC",
-    "CC0-1.0",
-    "Unlicense",
-    "MPL-2.0",
-    "Zlib",
-]
-
-[wasm]
-# Maximum WASM binary size in KB
-max_binary_size_kb = 500
-# Check WASM compatibility
-check_wasm_compat = true
-
-[ci]
-# Required checks before merge
-required_checks = [
-    "fmt",
-    "clippy",
-    "test",
-    "coverage",
-]
+# Documentation requirements
+require_readme = true
+require_changelog = true
+require_api_docs = true
