@@ -3,6 +3,8 @@
 [build]
 # Use all available cores
 jobs = -1
+# ZRAM build acceleration
+target-dir = "/mnt/zram/targets/alimentar"
 
 [target.'cfg(all())']
 rustflags = [
@@ -25,3 +27,4 @@ t = "test"
 b = "build"
 c = "check"
 r = "run"
+

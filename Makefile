@@ -116,18 +116,13 @@ coverage: ## Generate HTML coverage report (target: <5 min)
 	@which cargo-llvm-cov > /dev/null 2>&1 || (echo "📦 Installing cargo-llvm-cov..." && cargo install cargo-llvm-cov --locked)
 	@which cargo-nextest > /dev/null 2>&1 || (echo "📦 Installing cargo-nextest..." && cargo install cargo-nextest --locked)
 	@echo "🧹 Cleaning old coverage data..."
-	@cargo llvm-cov clean --workspace
 	@mkdir -p target/coverage
-	@echo "⚙️  Temporarily disabling global cargo config (mold breaks coverage)..."
-	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup 2>/dev/null || true
 	@echo "🧪 Phase 1: Running tests with instrumentation (no report)..."
 	@cargo llvm-cov --no-report nextest --no-tests=warn --features "$(COVERAGE_FEATURES)" --workspace
 	@echo "📊 Phase 2: Generating coverage reports..."
 	@cargo llvm-cov report --html --output-dir target/coverage/html
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info
 	@cp target/coverage/lcov.info lcov.info
-	@echo "⚙️  Restoring global cargo config..."
-	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml 2>/dev/null || true
 	@echo ""
 	@echo "📊 Coverage Summary:"
 	@echo "=================="
@@ -152,17 +147,12 @@ coverage-check: ## Enforce 85% coverage threshold (BLOCKS on failure)
 	@echo "   Note: S3 feature excluded (requires MinIO)"
 	@which cargo-llvm-cov > /dev/null 2>&1 || (echo "📦 Installing cargo-llvm-cov..." && cargo install cargo-llvm-cov --locked)
 	@which cargo-nextest > /dev/null 2>&1 || (echo "📦 Installing cargo-nextest..." && cargo install cargo-nextest --locked)
-	@cargo llvm-cov clean --workspace
-	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.cov-backup 2>/dev/null || true
 	@cargo llvm-cov --no-report nextest --no-tests=warn --features "$(COVERAGE_FEATURES)" --workspace
 	@cargo llvm-cov report --fail-under-lines $(COVERAGE_THRESHOLD) || \
 		(echo "❌ FAIL: Coverage below $(COVERAGE_THRESHOLD)% threshold"; \
-		 test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml 2>/dev/null; exit 1)
-	@test -f ~/.cargo/config.toml.cov-backup && mv ~/.cargo/config.toml.cov-backup ~/.cargo/config.toml 2>/dev/null || true
 	@echo "✅ Coverage threshold met (≥$(COVERAGE_THRESHOLD)%)"
 
 coverage-clean: ## Clean coverage artifacts
-	@cargo llvm-cov clean --workspace
 	@rm -f lcov.info coverage.xml target/coverage/lcov.info
 	@rm -rf target/llvm-cov target/coverage
 	@find . -name "*.profraw" -delete
