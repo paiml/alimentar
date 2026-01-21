@@ -159,7 +159,7 @@ pub enum FieldType {
     /// Array type with item type
     Array {
         /// Type of array items
-        item_type: Box<FieldType>,
+        item_type: Box<Self>,
     },
     /// Object type with nested schema
     Object {
