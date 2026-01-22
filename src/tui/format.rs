@@ -322,7 +322,12 @@ pub fn display_width(s: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{ArrayRef, Float32Array, Int32Array, StringArray};
+    use arrow::array::{
+        ArrayRef, BinaryArray, BooleanArray, Date32Array, Date64Array, Float32Array, Float64Array,
+        Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, LargeStringArray,
+        NullArray, StringArray, TimestampMillisecondArray, UInt16Array, UInt32Array, UInt64Array,
+        UInt8Array,
+    };
     use std::sync::Arc;
 
     fn make_string_array(values: Vec<Option<&str>>) -> ArrayRef {
@@ -335,6 +340,42 @@ mod tests {
 
     fn make_float32_array(values: Vec<Option<f32>>) -> ArrayRef {
         Arc::new(Float32Array::from(values))
+    }
+
+    fn make_int8_array(values: Vec<Option<i8>>) -> ArrayRef {
+        Arc::new(Int8Array::from(values))
+    }
+
+    fn make_int16_array(values: Vec<Option<i16>>) -> ArrayRef {
+        Arc::new(Int16Array::from(values))
+    }
+
+    fn make_int64_array(values: Vec<Option<i64>>) -> ArrayRef {
+        Arc::new(Int64Array::from(values))
+    }
+
+    fn make_uint8_array(values: Vec<Option<u8>>) -> ArrayRef {
+        Arc::new(UInt8Array::from(values))
+    }
+
+    fn make_uint16_array(values: Vec<Option<u16>>) -> ArrayRef {
+        Arc::new(UInt16Array::from(values))
+    }
+
+    fn make_uint32_array(values: Vec<Option<u32>>) -> ArrayRef {
+        Arc::new(UInt32Array::from(values))
+    }
+
+    fn make_uint64_array(values: Vec<Option<u64>>) -> ArrayRef {
+        Arc::new(UInt64Array::from(values))
+    }
+
+    fn make_float64_array(values: Vec<Option<f64>>) -> ArrayRef {
+        Arc::new(Float64Array::from(values))
+    }
+
+    fn make_boolean_array(values: Vec<Option<bool>>) -> ArrayRef {
+        Arc::new(BooleanArray::from(values))
     }
 
     #[test]
@@ -456,5 +497,215 @@ mod tests {
     #[test]
     fn f_type_name_float32() {
         assert_eq!(type_name(&DataType::Float32), "f32");
+    }
+
+    // Additional tests for comprehensive coverage
+
+    #[test]
+    fn f_format_int8() {
+        let array = make_int8_array(vec![Some(42), Some(-100)]);
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("42".to_string()));
+    }
+
+    #[test]
+    fn f_format_int16() {
+        let array = make_int16_array(vec![Some(1234), Some(-5678)]);
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("1234".to_string()));
+    }
+
+    #[test]
+    fn f_format_int64() {
+        let array = make_int64_array(vec![Some(1_000_000_000_000), Some(-1)]);
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("1000000000000".to_string()));
+    }
+
+    #[test]
+    fn f_format_uint8() {
+        let array = make_uint8_array(vec![Some(255), Some(0)]);
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("255".to_string()));
+    }
+
+    #[test]
+    fn f_format_uint16() {
+        let array = make_uint16_array(vec![Some(65535), Some(0)]);
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("65535".to_string()));
+    }
+
+    #[test]
+    fn f_format_uint32() {
+        let array = make_uint32_array(vec![Some(4_000_000_000), Some(0)]);
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("4000000000".to_string()));
+    }
+
+    #[test]
+    fn f_format_uint64() {
+        let array = make_uint64_array(vec![Some(18_446_744_073_709_551_615), Some(0)]);
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("18446744073709551615".to_string()));
+    }
+
+    #[test]
+    fn f_format_float64() {
+        let array = make_float64_array(vec![Some(2.718281828), Some(1.0)]);
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("2.7183".to_string()));
+    }
+
+    #[test]
+    fn f_format_boolean_true() {
+        let array = make_boolean_array(vec![Some(true), Some(false)]);
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("true".to_string()));
+    }
+
+    #[test]
+    fn f_format_boolean_false() {
+        let array = make_boolean_array(vec![Some(false), Some(true)]);
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("false".to_string()));
+    }
+
+    #[test]
+    fn f_format_large_string() {
+        let array: ArrayRef = Arc::new(LargeStringArray::from(vec!["large_text", "another"]));
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("large_text".to_string()));
+    }
+
+    #[test]
+    fn f_format_binary() {
+        let array: ArrayRef = Arc::new(BinaryArray::from_vec(vec![&[0x01, 0x02, 0x03]]));
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().starts_with("0x"));
+    }
+
+    #[test]
+    fn f_format_large_binary() {
+        let array: ArrayRef = Arc::new(LargeBinaryArray::from_vec(vec![&[0xde, 0xad, 0xbe, 0xef]]));
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("deadbeef"));
+    }
+
+    #[test]
+    fn f_format_date32() {
+        let array: ArrayRef = Arc::new(Date32Array::from(vec![Some(19000), None]));
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("date:"));
+    }
+
+    #[test]
+    fn f_format_date64() {
+        let array: ArrayRef = Arc::new(Date64Array::from(vec![Some(1_640_000_000_000), None]));
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("date64:"));
+    }
+
+    #[test]
+    fn f_format_timestamp_ms() {
+        let array: ArrayRef = Arc::new(TimestampMillisecondArray::from(vec![
+            Some(1_640_000_000_000),
+            None,
+        ]));
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("ts:"));
+    }
+
+    #[test]
+    fn f_format_null_type() {
+        let array: ArrayRef = Arc::new(NullArray::new(3));
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert_eq!(result, Some("NULL".to_string()));
+    }
+
+    #[test]
+    fn f_type_name_null() {
+        assert_eq!(type_name(&DataType::Null), "null");
+    }
+
+    #[test]
+    fn f_type_name_bool() {
+        assert_eq!(type_name(&DataType::Boolean), "bool");
+    }
+
+    #[test]
+    fn f_type_name_int8() {
+        assert_eq!(type_name(&DataType::Int8), "i8");
+    }
+
+    #[test]
+    fn f_type_name_int16() {
+        assert_eq!(type_name(&DataType::Int16), "i16");
+    }
+
+    #[test]
+    fn f_type_name_int64() {
+        assert_eq!(type_name(&DataType::Int64), "i64");
+    }
+
+    #[test]
+    fn f_type_name_uint8() {
+        assert_eq!(type_name(&DataType::UInt8), "u8");
+    }
+
+    #[test]
+    fn f_type_name_uint16() {
+        assert_eq!(type_name(&DataType::UInt16), "u16");
+    }
+
+    #[test]
+    fn f_type_name_uint32() {
+        assert_eq!(type_name(&DataType::UInt32), "u32");
+    }
+
+    #[test]
+    fn f_type_name_uint64() {
+        assert_eq!(type_name(&DataType::UInt64), "u64");
+    }
+
+    #[test]
+    fn f_type_name_float64() {
+        assert_eq!(type_name(&DataType::Float64), "f64");
+    }
+
+    #[test]
+    fn f_type_name_large_string() {
+        assert_eq!(type_name(&DataType::LargeUtf8), "large_string");
+    }
+
+    #[test]
+    fn f_type_name_binary() {
+        assert_eq!(type_name(&DataType::Binary), "binary");
+    }
+
+    #[test]
+    fn f_type_name_large_binary() {
+        assert_eq!(type_name(&DataType::LargeBinary), "large_binary");
+    }
+
+    #[test]
+    fn f_type_name_date32() {
+        assert_eq!(type_name(&DataType::Date32), "date32");
+    }
+
+    #[test]
+    fn f_type_name_date64() {
+        assert_eq!(type_name(&DataType::Date64), "date64");
+    }
+
+    #[test]
+    fn f_type_name_timestamp() {
+        let ts_type = DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None);
+        assert_eq!(type_name(&ts_type), "timestamp");
     }
 }
