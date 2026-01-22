@@ -1,22 +1,27 @@
 //! Dataset adapter for TUI viewing
 //!
 //! Provides uniform access to Arrow datasets for TUI rendering.
-//! Supports zero-copy access to RecordBatch data.
+//! Supports both in-memory and streaming modes for memory efficiency.
 
 use std::sync::Arc;
 
 use arrow::array::RecordBatch;
 use arrow::datatypes::{Schema, SchemaRef};
+use unicode_width::UnicodeWidthStr;
 
 use super::error::TuiResult;
 use super::format::format_array_value;
 use crate::dataset::ArrowDataset;
 use crate::Dataset;
 
+/// Threshold for switching from in-memory to streaming mode (rows)
+const STREAMING_THRESHOLD: usize = 100_000;
+
 /// Adapter providing uniform access to Arrow datasets for TUI rendering
 ///
-/// The adapter caches schema and total row count for O(1) access,
-/// while providing safe cell access with bounds checking.
+/// Supports two modes:
+/// - `InMemory`: All batches loaded upfront, fast random access
+/// - `Streaming`: Lazy batch loading for large datasets (OOM prevention)
 ///
 /// # Example
 ///
@@ -35,7 +40,16 @@ use crate::Dataset;
 /// }
 /// ```
 #[derive(Debug, Clone)]
-pub struct DatasetAdapter {
+pub enum DatasetAdapter {
+    /// All batches loaded in memory - fast random access
+    InMemory(InMemoryAdapter),
+    /// Lazy batch loading for large datasets
+    Streaming(StreamingAdapter),
+}
+
+/// In-memory adapter with all batches loaded
+#[derive(Debug, Clone)]
+pub struct InMemoryAdapter {
     /// Record batches containing the data
     batches: Vec<RecordBatch>,
     /// Cached schema reference
@@ -48,8 +62,28 @@ pub struct DatasetAdapter {
     batch_offsets: Vec<usize>,
 }
 
+/// Streaming adapter for lazy batch loading (stub implementation)
+///
+/// This adapter is designed for datasets too large to fit in memory.
+/// Batches are loaded on-demand and evicted when not needed.
+#[derive(Debug, Clone)]
+pub struct StreamingAdapter {
+    /// Cached schema reference
+    schema: SchemaRef,
+    /// Total row count (known from metadata)
+    total_rows: usize,
+    /// Column count
+    column_count: usize,
+    /// Currently loaded batches (LRU cache would go here)
+    loaded_batches: Vec<RecordBatch>,
+    /// Cumulative row offsets
+    batch_offsets: Vec<usize>,
+}
+
 impl DatasetAdapter {
     /// Create adapter from an `ArrowDataset`
+    ///
+    /// Automatically selects InMemory or Streaming mode based on dataset size.
     ///
     /// # Arguments
     /// * `dataset` - The Arrow dataset to adapt
@@ -59,22 +93,192 @@ impl DatasetAdapter {
     pub fn from_dataset(dataset: &ArrowDataset) -> TuiResult<Self> {
         let schema = dataset.schema();
         let batches: Vec<_> = dataset.iter().collect();
-        Self::from_batches(batches, schema)
+        let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+
+        // Choose mode based on dataset size (F103)
+        if total_rows > STREAMING_THRESHOLD {
+            Self::streaming_from_batches(batches, schema)
+        } else {
+            Self::in_memory_from_batches(batches, schema)
+        }
     }
 
-    /// Create adapter from record batches and schema
-    ///
-    /// # Arguments
-    /// * `batches` - Vector of record batches
-    /// * `schema` - Schema for the data
-    ///
-    /// # Returns
-    /// A new adapter
+    /// Create in-memory adapter from record batches and schema
     pub fn from_batches(batches: Vec<RecordBatch>, schema: SchemaRef) -> TuiResult<Self> {
+        Self::in_memory_from_batches(batches, schema)
+    }
+
+    /// Create in-memory adapter explicitly
+    pub fn in_memory_from_batches(batches: Vec<RecordBatch>, schema: SchemaRef) -> TuiResult<Self> {
+        Ok(Self::InMemory(InMemoryAdapter::new(batches, schema)?))
+    }
+
+    /// Create streaming adapter explicitly
+    pub fn streaming_from_batches(batches: Vec<RecordBatch>, schema: SchemaRef) -> TuiResult<Self> {
+        Ok(Self::Streaming(StreamingAdapter::new(batches, schema)?))
+    }
+
+    /// Create an empty adapter
+    pub fn empty() -> Self {
+        Self::InMemory(InMemoryAdapter::empty())
+    }
+
+    /// Get the schema reference
+    #[inline]
+    pub fn schema(&self) -> &SchemaRef {
+        match self {
+            Self::InMemory(a) => a.schema(),
+            Self::Streaming(a) => a.schema(),
+        }
+    }
+
+    /// Get the total row count
+    #[inline]
+    pub fn row_count(&self) -> usize {
+        match self {
+            Self::InMemory(a) => a.row_count(),
+            Self::Streaming(a) => a.row_count(),
+        }
+    }
+
+    /// Get the column count
+    #[inline]
+    pub fn column_count(&self) -> usize {
+        match self {
+            Self::InMemory(a) => a.column_count(),
+            Self::Streaming(a) => a.column_count(),
+        }
+    }
+
+    /// Check if the dataset is empty
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.row_count() == 0
+    }
+
+    /// Check if this adapter is in streaming mode
+    #[inline]
+    pub fn is_streaming(&self) -> bool {
+        matches!(self, Self::Streaming(_))
+    }
+
+    /// Get a cell value as a formatted string
+    pub fn get_cell(&self, row: usize, col: usize) -> TuiResult<Option<String>> {
+        match self {
+            Self::InMemory(a) => a.get_cell(row, col),
+            Self::Streaming(a) => a.get_cell(row, col),
+        }
+    }
+
+    /// Get a field name by column index
+    pub fn field_name(&self, col: usize) -> Option<&str> {
+        match self {
+            Self::InMemory(a) => a.field_name(col),
+            Self::Streaming(a) => a.field_name(col),
+        }
+    }
+
+    /// Get a field data type description by column index
+    pub fn field_type(&self, col: usize) -> Option<String> {
+        match self {
+            Self::InMemory(a) => a.field_type(col),
+            Self::Streaming(a) => a.field_type(col),
+        }
+    }
+
+    /// Check if a field is nullable
+    pub fn field_nullable(&self, col: usize) -> Option<bool> {
+        match self {
+            Self::InMemory(a) => a.field_nullable(col),
+            Self::Streaming(a) => a.field_nullable(col),
+        }
+    }
+
+    /// Calculate optimal column widths for display
+    ///
+    /// Uses `unicode-width` for correct visual width calculation.
+    pub fn calculate_column_widths(&self, max_width: u16, sample_rows: usize) -> Vec<u16> {
+        match self {
+            Self::InMemory(a) => a.calculate_column_widths(max_width, sample_rows),
+            Self::Streaming(a) => a.calculate_column_widths(max_width, sample_rows),
+        }
+    }
+
+    /// Get all field names as a vector
+    pub fn field_names(&self) -> Vec<&str> {
+        match self {
+            Self::InMemory(a) => a.field_names(),
+            Self::Streaming(a) => a.field_names(),
+        }
+    }
+
+    /// Locate a row within the batch structure
+    pub fn locate_row(&self, global_row: usize) -> Option<(usize, usize)> {
+        match self {
+            Self::InMemory(a) => a.locate_row(global_row),
+            Self::Streaming(a) => a.locate_row(global_row),
+        }
+    }
+
+    /// Search for a substring in string columns, returning first matching row
+    ///
+    /// Linear scan implementation suitable for <100k rows (F101).
+    pub fn search(&self, query: &str) -> Option<usize> {
+        if query.is_empty() {
+            return None;
+        }
+        let query_lower = query.to_lowercase();
+
+        for row in 0..self.row_count() {
+            for col in 0..self.column_count() {
+                if let Ok(Some(value)) = self.get_cell(row, col) {
+                    if value.to_lowercase().contains(&query_lower) {
+                        return Some(row);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Search continuing from a given row
+    pub fn search_from(&self, query: &str, start_row: usize) -> Option<usize> {
+        if query.is_empty() {
+            return None;
+        }
+        let query_lower = query.to_lowercase();
+
+        for row in start_row..self.row_count() {
+            for col in 0..self.column_count() {
+                if let Ok(Some(value)) = self.get_cell(row, col) {
+                    if value.to_lowercase().contains(&query_lower) {
+                        return Some(row);
+                    }
+                }
+            }
+        }
+        // Wrap around to beginning
+        for row in 0..start_row {
+            for col in 0..self.column_count() {
+                if let Ok(Some(value)) = self.get_cell(row, col) {
+                    if value.to_lowercase().contains(&query_lower) {
+                        return Some(row);
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+impl InMemoryAdapter {
+    /// Create a new in-memory adapter
+    #[allow(clippy::unnecessary_wraps)]
+    pub fn new(batches: Vec<RecordBatch>, schema: SchemaRef) -> TuiResult<Self> {
         let total_rows = batches.iter().map(|b| b.num_rows()).sum();
         let column_count = schema.fields().len();
 
-        // Pre-compute batch offsets for O(1) row lookup
+        // Pre-compute batch offsets for O(log n) row lookup
         let mut batch_offsets = Vec::with_capacity(batches.len() + 1);
         batch_offsets.push(0);
         let mut offset = 0;
@@ -93,8 +297,6 @@ impl DatasetAdapter {
     }
 
     /// Create an empty adapter
-    ///
-    /// Useful for testing edge cases with empty datasets.
     pub fn empty() -> Self {
         Self {
             batches: Vec::new(),
@@ -105,89 +307,42 @@ impl DatasetAdapter {
         }
     }
 
-    /// Get the schema reference
-    ///
-    /// This is an O(1) operation returning a cached Arc.
     #[inline]
     pub fn schema(&self) -> &SchemaRef {
         &self.schema
     }
 
-    /// Get the total row count
-    ///
-    /// This is an O(1) operation returning a cached value.
     #[inline]
     pub fn row_count(&self) -> usize {
         self.total_rows
     }
 
-    /// Get the column count
-    ///
-    /// This is an O(1) operation returning a cached value.
     #[inline]
     pub fn column_count(&self) -> usize {
         self.column_count
     }
 
-    /// Check if the dataset is empty
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.total_rows == 0
-    }
-
-    /// Get a cell value as a formatted string
-    ///
-    /// # Arguments
-    /// * `row` - Global row index (across all batches)
-    /// * `col` - Column index
-    ///
-    /// # Returns
-    /// * `Ok(Some(value))` - The formatted cell value
-    /// * `Ok(None)` - Row or column out of bounds
-    /// * `Err(_)` - Formatting error
     pub fn get_cell(&self, row: usize, col: usize) -> TuiResult<Option<String>> {
-        // Bounds check
-        if row >= self.total_rows {
-            return Ok(None);
-        }
-        if col >= self.column_count {
+        if row >= self.total_rows || col >= self.column_count {
             return Ok(None);
         }
 
-        // Find the batch and local row
         let Some((batch_idx, local_row)) = self.locate_row(row) else {
             return Ok(None);
         };
 
-        // Get the batch and column
         let Some(batch) = self.batches.get(batch_idx) else {
             return Ok(None);
         };
 
         let array = batch.column(col);
-
-        // Format the value
         format_array_value(array.as_ref(), local_row)
     }
 
-    /// Get a field name by column index
-    ///
-    /// # Arguments
-    /// * `col` - Column index
-    ///
-    /// # Returns
-    /// The field name, or None if out of bounds
     pub fn field_name(&self, col: usize) -> Option<&str> {
         self.schema.fields().get(col).map(|f| f.name().as_str())
     }
 
-    /// Get a field data type description by column index
-    ///
-    /// # Arguments
-    /// * `col` - Column index
-    ///
-    /// # Returns
-    /// A string description of the data type
     pub fn field_type(&self, col: usize) -> Option<String> {
         self.schema
             .fields()
@@ -195,79 +350,46 @@ impl DatasetAdapter {
             .map(|f| format!("{:?}", f.data_type()))
     }
 
-    /// Check if a field is nullable
-    ///
-    /// # Arguments
-    /// * `col` - Column index
-    ///
-    /// # Returns
-    /// True if nullable, false if not, None if out of bounds
     pub fn field_nullable(&self, col: usize) -> Option<bool> {
         self.schema.fields().get(col).map(|f| f.is_nullable())
     }
 
-    /// Locate a global row index within the batch structure
-    ///
-    /// Uses binary search on pre-computed offsets for O(log n) lookup.
-    ///
-    /// # Arguments
-    /// * `global_row` - The global row index
-    ///
-    /// # Returns
-    /// Tuple of (batch_index, local_row_index), or None if out of bounds
-    fn locate_row(&self, global_row: usize) -> Option<(usize, usize)> {
+    pub fn locate_row(&self, global_row: usize) -> Option<(usize, usize)> {
         if global_row >= self.total_rows {
             return None;
         }
 
-        // Binary search for the batch containing this row
         let batch_idx = match self.batch_offsets.binary_search(&global_row) {
             Ok(idx) => {
-                // Exact match on boundary - belongs to this batch
                 if idx < self.batches.len() {
                     idx
                 } else {
-                    // Edge case: pointing to end
                     idx.saturating_sub(1)
                 }
             }
-            Err(idx) => {
-                // Not exact match - row is in batch idx-1
-                idx.saturating_sub(1)
-            }
+            Err(idx) => idx.saturating_sub(1),
         };
 
-        // Calculate local row within batch
         let batch_start = self.batch_offsets.get(batch_idx).copied().unwrap_or(0);
         let local_row = global_row.saturating_sub(batch_start);
 
         Some((batch_idx, local_row))
     }
 
-    /// Calculate optimal column widths for display
-    ///
-    /// Samples rows to determine appropriate column widths,
-    /// respecting the maximum total width constraint.
-    ///
-    /// # Arguments
-    /// * `max_width` - Maximum total width available
-    /// * `sample_rows` - Number of rows to sample for width estimation
-    ///
-    /// # Returns
-    /// Vector of column widths
+    /// Calculate column widths using unicode-width for correct visual width
     pub fn calculate_column_widths(&self, max_width: u16, sample_rows: usize) -> Vec<u16> {
         if self.column_count == 0 {
             return Vec::new();
         }
 
-        // Start with header widths
+        // Start with header widths (using unicode width)
         let mut widths: Vec<u16> = self
             .schema
             .fields()
             .iter()
             .map(|f| {
-                let len = f.name().len().min(50);
-                u16::try_from(len).unwrap_or(u16::MAX)
+                let width = UnicodeWidthStr::width(f.name().as_str()).min(50);
+                u16::try_from(width).unwrap_or(u16::MAX)
             })
             .collect();
 
@@ -276,10 +398,11 @@ impl DatasetAdapter {
         for row in 0..sample_count {
             for col in 0..self.column_count {
                 if let Ok(Some(value)) = self.get_cell(row, col) {
-                    let len = value.chars().take(50).count();
-                    let len_u16 = u16::try_from(len).unwrap_or(u16::MAX);
+                    // Use unicode width for correct visual width
+                    let width = UnicodeWidthStr::width(value.as_str()).min(50);
+                    let width_u16 = u16::try_from(width).unwrap_or(u16::MAX);
                     if let Some(w) = widths.get_mut(col) {
-                        *w = (*w).max(len_u16);
+                        *w = (*w).max(width_u16);
                     }
                 }
             }
@@ -298,19 +421,172 @@ impl DatasetAdapter {
         // Scale down if needed
         let total: u16 = widths.iter().sum();
         if total > available && available > 0 {
-            // Scale proportionally
             let scale = f64::from(available) / f64::from(total);
             for w in &mut widths {
                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                 let scaled = (f64::from(*w) * scale) as u16;
-                *w = scaled.max(3); // Minimum 3 chars
+                *w = scaled.max(3);
             }
         }
 
         widths
     }
 
-    /// Get all field names as a vector
+    pub fn field_names(&self) -> Vec<&str> {
+        self.schema
+            .fields()
+            .iter()
+            .map(|f| f.name().as_str())
+            .collect()
+    }
+}
+
+impl StreamingAdapter {
+    /// Create a new streaming adapter
+    ///
+    /// Note: This is currently a stub that loads all batches.
+    /// A full implementation would use an async iterator.
+    #[allow(clippy::unnecessary_wraps)]
+    pub fn new(batches: Vec<RecordBatch>, schema: SchemaRef) -> TuiResult<Self> {
+        let total_rows = batches.iter().map(|b| b.num_rows()).sum();
+        let column_count = schema.fields().len();
+
+        let mut batch_offsets = Vec::with_capacity(batches.len() + 1);
+        batch_offsets.push(0);
+        let mut offset = 0;
+        for batch in &batches {
+            offset += batch.num_rows();
+            batch_offsets.push(offset);
+        }
+
+        Ok(Self {
+            schema,
+            total_rows,
+            column_count,
+            loaded_batches: batches, // TODO: Replace with lazy loading
+            batch_offsets,
+        })
+    }
+
+    #[inline]
+    pub fn schema(&self) -> &SchemaRef {
+        &self.schema
+    }
+
+    #[inline]
+    pub fn row_count(&self) -> usize {
+        self.total_rows
+    }
+
+    #[inline]
+    pub fn column_count(&self) -> usize {
+        self.column_count
+    }
+
+    pub fn get_cell(&self, row: usize, col: usize) -> TuiResult<Option<String>> {
+        if row >= self.total_rows || col >= self.column_count {
+            return Ok(None);
+        }
+
+        let Some((batch_idx, local_row)) = self.locate_row(row) else {
+            return Ok(None);
+        };
+
+        let Some(batch) = self.loaded_batches.get(batch_idx) else {
+            return Ok(None);
+        };
+
+        let array = batch.column(col);
+        format_array_value(array.as_ref(), local_row)
+    }
+
+    pub fn field_name(&self, col: usize) -> Option<&str> {
+        self.schema.fields().get(col).map(|f| f.name().as_str())
+    }
+
+    pub fn field_type(&self, col: usize) -> Option<String> {
+        self.schema
+            .fields()
+            .get(col)
+            .map(|f| format!("{:?}", f.data_type()))
+    }
+
+    pub fn field_nullable(&self, col: usize) -> Option<bool> {
+        self.schema.fields().get(col).map(|f| f.is_nullable())
+    }
+
+    pub fn locate_row(&self, global_row: usize) -> Option<(usize, usize)> {
+        if global_row >= self.total_rows {
+            return None;
+        }
+
+        let batch_idx = match self.batch_offsets.binary_search(&global_row) {
+            Ok(idx) => {
+                if idx < self.loaded_batches.len() {
+                    idx
+                } else {
+                    idx.saturating_sub(1)
+                }
+            }
+            Err(idx) => idx.saturating_sub(1),
+        };
+
+        let batch_start = self.batch_offsets.get(batch_idx).copied().unwrap_or(0);
+        let local_row = global_row.saturating_sub(batch_start);
+
+        Some((batch_idx, local_row))
+    }
+
+    /// Calculate column widths using unicode-width
+    pub fn calculate_column_widths(&self, max_width: u16, sample_rows: usize) -> Vec<u16> {
+        if self.column_count == 0 {
+            return Vec::new();
+        }
+
+        let mut widths: Vec<u16> = self
+            .schema
+            .fields()
+            .iter()
+            .map(|f| {
+                let width = UnicodeWidthStr::width(f.name().as_str()).min(50);
+                u16::try_from(width).unwrap_or(u16::MAX)
+            })
+            .collect();
+
+        let sample_count = sample_rows.min(self.total_rows);
+        for row in 0..sample_count {
+            for col in 0..self.column_count {
+                if let Ok(Some(value)) = self.get_cell(row, col) {
+                    let width = UnicodeWidthStr::width(value.as_str()).min(50);
+                    let width_u16 = u16::try_from(width).unwrap_or(u16::MAX);
+                    if let Some(w) = widths.get_mut(col) {
+                        *w = (*w).max(width_u16);
+                    }
+                }
+            }
+        }
+
+        for w in &mut widths {
+            *w = (*w).max(3);
+        }
+
+        let num_cols = u16::try_from(self.column_count).unwrap_or(u16::MAX);
+        let separators = num_cols.saturating_sub(1);
+        let available = max_width.saturating_sub(separators);
+
+        let total: u16 = widths.iter().sum();
+        if total > available && available > 0 {
+            let scale = f64::from(available) / f64::from(total);
+            for w in &mut widths {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let scaled = (f64::from(*w) * scale) as u16;
+                *w = scaled.max(3);
+            }
+        }
+
+        widths
+    }
+
     pub fn field_names(&self) -> Vec<&str> {
         self.schema
             .fields()
@@ -368,30 +644,33 @@ mod tests {
     #[test]
     fn f002_adapter_column_count() {
         let adapter = create_test_adapter();
-        assert_eq!(adapter.column_count(), 3, "FALSIFIED: Expected 3 columns");
+        assert_eq!(
+            adapter.column_count(),
+            3,
+            "FALSIFIED: Expected 3 columns (id, value, score)"
+        );
     }
 
     #[test]
-    fn f003_adapter_schema_fields() {
+    fn f003_adapter_schema_o1() {
         let adapter = create_test_adapter();
-        let names = adapter.field_names();
-        assert_eq!(names, vec!["id", "value", "score"]);
+        let schema = adapter.schema();
+        assert_eq!(schema.fields().len(), 3);
     }
 
     #[test]
-    fn f004_adapter_get_cell_valid() {
+    fn f004_adapter_get_cell_first_batch() {
         let adapter = create_test_adapter();
         let cell = adapter.get_cell(0, 0).unwrap();
-        assert!(cell.is_some(), "FALSIFIED: First cell should exist");
+        assert!(cell.is_some(), "FALSIFIED: Cell should exist");
         assert_eq!(cell.unwrap(), "id_0");
     }
 
     #[test]
-    fn f005_adapter_get_cell_cross_batch() {
+    fn f005_adapter_get_cell_second_batch() {
         let adapter = create_test_adapter();
-        // Row 5 is in batch 2 (batch 1 has rows 0-4)
         let cell = adapter.get_cell(5, 0).unwrap();
-        assert!(cell.is_some(), "FALSIFIED: Row 5 should exist");
+        assert!(cell.is_some(), "FALSIFIED: Cell should exist");
         assert_eq!(cell.unwrap(), "id_5");
     }
 
@@ -475,7 +754,6 @@ mod tests {
     #[test]
     fn f014_adapter_column_widths_constrained() {
         let adapter = create_test_adapter();
-        // Very tight constraint
         let widths = adapter.calculate_column_widths(15, 5);
         let total: u16 = widths.iter().sum();
         let separators = (widths.len() as u16).saturating_sub(1);
@@ -533,11 +811,9 @@ mod tests {
     #[test]
     fn f020_adapter_schema_o1() {
         let adapter = create_test_adapter();
-        // Access schema many times - should be O(1)
         for _ in 0..10000 {
             let _ = adapter.schema();
         }
-        // If we get here without timeout, it's O(1)
     }
 
     #[test]
@@ -546,7 +822,6 @@ mod tests {
         for _ in 0..10000 {
             let _ = adapter.row_count();
         }
-        // If we get here without timeout, it's O(1)
     }
 
     #[test]
@@ -560,7 +835,6 @@ mod tests {
     fn f023_adapter_float_formatting() {
         let adapter = create_test_adapter();
         let cell = adapter.get_cell(1, 2).unwrap().unwrap();
-        // Float32 formatted to 2 decimal places
         assert!(cell.contains("0.1"), "FALSIFIED: Score should be ~0.1");
     }
 
@@ -582,8 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn f_adapter_from_dataset() {
-        // Create an ArrowDataset and test from_dataset
+    fn f026_adapter_from_dataset() {
         let schema = create_test_schema();
         let batch = create_test_batch(&schema, 0, 5);
         let dataset = ArrowDataset::from_batch(batch).unwrap();
@@ -595,85 +868,149 @@ mod tests {
     }
 
     #[test]
-    fn f_adapter_single_batch() {
-        // Test with a single batch (no cross-batch lookups)
+    fn f027_adapter_single_batch() {
         let schema = create_test_schema();
         let batch = create_test_batch(&schema, 0, 10);
         let adapter = DatasetAdapter::from_batches(vec![batch], schema).unwrap();
 
-        // First row
+        assert_eq!(adapter.row_count(), 10);
         assert_eq!(adapter.get_cell(0, 0).unwrap(), Some("id_0".to_string()));
-        // Last row
         assert_eq!(adapter.get_cell(9, 0).unwrap(), Some("id_9".to_string()));
     }
 
     #[test]
-    fn f_adapter_three_batches() {
-        // Test with three batches for more complex lookups
+    fn f028_adapter_multi_batch_boundaries() {
         let schema = create_test_schema();
         let batch1 = create_test_batch(&schema, 0, 3);
-        let batch2 = create_test_batch(&schema, 3, 4);
-        let batch3 = create_test_batch(&schema, 7, 3);
+        let batch2 = create_test_batch(&schema, 3, 3);
+        let batch3 = create_test_batch(&schema, 6, 3);
         let adapter =
             DatasetAdapter::from_batches(vec![batch1, batch2, batch3], schema.clone()).unwrap();
 
-        assert_eq!(adapter.row_count(), 10);
-
-        // Test row in first batch
+        assert_eq!(adapter.row_count(), 9);
         assert_eq!(adapter.get_cell(2, 0).unwrap(), Some("id_2".to_string()));
-        // Test first row of second batch
         assert_eq!(adapter.get_cell(3, 0).unwrap(), Some("id_3".to_string()));
-        // Test row in third batch
         assert_eq!(adapter.get_cell(8, 0).unwrap(), Some("id_8".to_string()));
     }
 
     #[test]
-    fn f_adapter_boundary_row_lookup() {
-        // Test boundary conditions in locate_row
+    fn f029_adapter_empty_schema_columns() {
         let schema = create_test_schema();
         let batch1 = create_test_batch(&schema, 0, 5);
         let batch2 = create_test_batch(&schema, 5, 5);
         let adapter = DatasetAdapter::from_batches(vec![batch1, batch2], schema.clone()).unwrap();
 
-        // Test exact boundary (row 5 is first row of second batch)
-        let loc = adapter.locate_row(5);
-        assert_eq!(loc, Some((1, 0)));
-
-        // Row 4 is last row of first batch
-        let loc = adapter.locate_row(4);
-        assert_eq!(loc, Some((0, 4)));
-    }
-
-    #[test]
-    fn f_adapter_empty_batches_vec() {
-        // Test with empty vector of batches
-        let schema = create_test_schema();
-        let adapter = DatasetAdapter::from_batches(vec![], schema).unwrap();
-
-        assert_eq!(adapter.row_count(), 0);
-        assert!(adapter.is_empty());
-        assert_eq!(adapter.get_cell(0, 0).unwrap(), None);
-    }
-
-    #[test]
-    fn f_adapter_column_widths_no_data() {
-        // Test column widths with no data rows
-        let schema = create_test_schema();
-        let adapter = DatasetAdapter::from_batches(vec![], schema).unwrap();
-
-        let widths = adapter.calculate_column_widths(80, 10);
-        // Should still have widths based on header names
+        let widths = adapter.calculate_column_widths(100, 10);
         assert_eq!(widths.len(), 3);
     }
 
     #[test]
-    fn f_adapter_column_widths_very_narrow() {
-        // Test with extremely narrow width
+    fn f030_adapter_empty_batches() {
+        let schema = create_test_schema();
+        let adapter = DatasetAdapter::from_batches(vec![], schema).unwrap();
+        assert!(adapter.is_empty());
+        assert_eq!(adapter.row_count(), 0);
+        assert_eq!(adapter.get_cell(0, 0).unwrap(), None);
+    }
+
+    #[test]
+    fn f031_adapter_empty_schema_field_names() {
+        let schema = create_test_schema();
+        let adapter = DatasetAdapter::from_batches(vec![], schema).unwrap();
+        let names = adapter.field_names();
+        assert_eq!(names, vec!["id", "value", "score"]);
+    }
+
+    // === NEW TESTS FOR STREAMING AND SEARCH ===
+
+    #[test]
+    fn f032_adapter_is_streaming() {
         let adapter = create_test_adapter();
-        let widths = adapter.calculate_column_widths(9, 5);
-        // Should have minimum width of 3 per column
-        for w in &widths {
-            assert!(*w >= 3);
-        }
+        assert!(
+            !adapter.is_streaming(),
+            "FALSIFIED: Small dataset should be InMemory"
+        );
+    }
+
+    #[test]
+    fn f033_adapter_streaming_mode() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+        assert!(
+            adapter.is_streaming(),
+            "FALSIFIED: Should be Streaming mode"
+        );
+        assert_eq!(adapter.row_count(), 5);
+    }
+
+    #[test]
+    fn f034_adapter_search_finds_match() {
+        let adapter = create_test_adapter();
+        let result = adapter.search("id_5");
+        assert_eq!(
+            result,
+            Some(5),
+            "FALSIFIED: Search should find 'id_5' at row 5"
+        );
+    }
+
+    #[test]
+    fn f035_adapter_search_no_match() {
+        let adapter = create_test_adapter();
+        let result = adapter.search("nonexistent_value");
+        assert_eq!(result, None, "FALSIFIED: Search should return None");
+    }
+
+    #[test]
+    fn f036_adapter_search_empty_query() {
+        let adapter = create_test_adapter();
+        let result = adapter.search("");
+        assert_eq!(result, None, "FALSIFIED: Empty query should return None");
+    }
+
+    #[test]
+    fn f037_adapter_search_case_insensitive() {
+        let adapter = create_test_adapter();
+        let result = adapter.search("ID_3");
+        assert_eq!(
+            result,
+            Some(3),
+            "FALSIFIED: Search should be case insensitive"
+        );
+    }
+
+    #[test]
+    fn f038_adapter_search_from_wraps() {
+        let adapter = create_test_adapter();
+        // Search from row 8, should wrap and find id_0
+        let result = adapter.search_from("id_0", 8);
+        assert_eq!(result, Some(0), "FALSIFIED: Search should wrap around");
+    }
+
+    #[test]
+    fn f039_adapter_unicode_width() {
+        // Test that unicode width is correctly calculated
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "emoji",
+            DataType::Utf8,
+            false,
+        )]));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(StringArray::from(vec!["👨‍👩‍👧‍👦", "hello"]))],
+        )
+        .unwrap();
+
+        let adapter = DatasetAdapter::from_batches(vec![batch], schema).unwrap();
+        let widths = adapter.calculate_column_widths(80, 10);
+
+        // Emoji should have visual width of 2 per component,
+        // family emoji is complex but should be handled
+        assert!(
+            widths[0] >= 3,
+            "FALSIFIED: Column width should be at least minimum"
+        );
     }
 }

@@ -264,6 +264,34 @@ impl DatasetViewer {
         self.scroll.to_global_row(viewport_row)
     }
 
+    // Search methods
+
+    /// Search for a substring and select the first matching row
+    ///
+    /// Returns the row index if found, None otherwise.
+    /// This is a linear scan suitable for datasets <100k rows (F101).
+    pub fn search(&mut self, query: &str) -> Option<usize> {
+        let result = self.adapter.search(query);
+        if let Some(row) = result {
+            self.select_row(row);
+            self.scroll.ensure_visible(row);
+        }
+        result
+    }
+
+    /// Continue search from current position
+    ///
+    /// Wraps around to beginning if no match found after current row.
+    pub fn search_next(&mut self, query: &str) -> Option<usize> {
+        let start = self.scroll.selected().map(|r| r + 1).unwrap_or(0);
+        let result = self.adapter.search_from(query, start);
+        if let Some(row) = result {
+            self.select_row(row);
+            self.scroll.ensure_visible(row);
+        }
+        result
+    }
+
     /// Render complete output as lines
     ///
     /// Returns header followed by visible data rows.
@@ -576,7 +604,85 @@ mod tests {
         let viewer = DatasetViewer::new(adapter);
         let rows = viewer.visible_rows_data();
 
-        // Should have rows and the null column should be empty string
-        assert!(!rows.is_empty());
+        // FALSIFIABLE: Assert actual behavior, not just existence
+        assert_eq!(rows.len(), 2, "FALSIFIED: Should have 2 rows");
+        assert_eq!(rows[0].len(), 2, "FALSIFIED: Should have 2 columns");
+        assert_eq!(rows[0][0], "a", "FALSIFIED: First cell should be 'a'");
+        // Null column should render as empty string or "NULL"
+        assert!(
+            rows[0][1].is_empty() || rows[0][1] == "null" || rows[0][1] == "NULL",
+            "FALSIFIED: Null should render as empty or 'null'/'NULL', got: '{}'",
+            rows[0][1]
+        );
+    }
+
+    // === SEARCH TESTS (F101-F103) ===
+
+    #[test]
+    fn f_viewer_search_finds_match() {
+        let mut viewer = create_test_viewer();
+        let result = viewer.search("id_5");
+        assert_eq!(
+            result,
+            Some(5),
+            "FALSIFIED: Search should find 'id_5' at row 5"
+        );
+        assert_eq!(
+            viewer.selected_row(),
+            Some(5),
+            "FALSIFIED: Search should select found row"
+        );
+    }
+
+    #[test]
+    fn f_viewer_search_no_match() {
+        let mut viewer = create_test_viewer();
+        let result = viewer.search("nonexistent_xyz");
+        assert_eq!(result, None, "FALSIFIED: Search should return None");
+        assert_eq!(
+            viewer.selected_row(),
+            None,
+            "FALSIFIED: No selection should change"
+        );
+    }
+
+    #[test]
+    fn f_viewer_search_case_insensitive() {
+        let mut viewer = create_test_viewer();
+        let result = viewer.search("ID_3");
+        assert_eq!(
+            result,
+            Some(3),
+            "FALSIFIED: Search should be case insensitive"
+        );
+    }
+
+    #[test]
+    fn f_viewer_search_next_continues() {
+        let mut viewer = create_test_viewer();
+        // First search
+        viewer.search("id_");
+        let first = viewer.selected_row();
+        // Search next should find a different row
+        viewer.search_next("id_");
+        let second = viewer.selected_row();
+        assert_ne!(first, second, "FALSIFIED: search_next should continue");
+    }
+
+    #[test]
+    fn f_viewer_search_next_wraps() {
+        let mut viewer = create_test_viewer();
+        // Select last row
+        viewer.select_row(9);
+        // Search next should wrap to beginning
+        let result = viewer.search_next("id_0");
+        assert_eq!(result, Some(0), "FALSIFIED: search_next should wrap");
+    }
+
+    #[test]
+    fn f_viewer_search_empty_query() {
+        let mut viewer = create_test_viewer();
+        let result = viewer.search("");
+        assert_eq!(result, None, "FALSIFIED: Empty query should return None");
     }
 }
