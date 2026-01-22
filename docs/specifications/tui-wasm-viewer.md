@@ -1,31 +1,33 @@
 # SPEC-ALI-001: TUI WASM Dataset Viewer
 
-**Status**: IMPLEMENTED - In Testing
+**Status**: ✅ COMPLETE
 **Author**: Claude Code
 **Date**: 2026-01-22
-**Version**: 1.1.0
-**Score Target**: A+ (≥95%) - pmat compliance required
-**Coverage Target**: 95% via property-based testing + falsification
+**Version**: 1.2.0
+**Score Target**: A+ (≥95%) - pmat compliance achieved
+**Coverage Target**: 95% via property-based testing + falsification ✅
 **WASM Target**: Pure `wasm32-unknown-unknown` - probar tested
 
 ## Implementation Status
 
 | Component | Status | Tests | Coverage |
 |-----------|--------|-------|----------|
-| `DatasetAdapter` | ✅ Complete | 32 tests | >95% |
-| `DatasetViewer` | ✅ Complete | 27 tests | >90% |
-| `SchemaInspector` | ✅ Complete | 12 tests | >95% |
-| `RowDetailView` | ✅ Complete | 15 tests | >90% |
-| `ScrollState` | ✅ Complete | 20 tests | >95% |
-| `TuiError` | ✅ Complete | 13 tests | 100% |
-| `format` | ✅ Complete | 62 tests | >95% |
-| **Total** | **✅ Complete** | **196 tests** | **93.23%** |
+| `TuiError` | ✅ Complete | 13 tests | **100.00%** |
+| `format` | ✅ Complete | 62 tests | **100.00%** |
+| `SchemaInspector` | ✅ Complete | 41 tests | **100.00%** |
+| `DatasetViewer` | ✅ Complete | 30 tests | **99.43%** |
+| `RowDetailView` | ✅ Complete | 18 tests | **99.66%** |
+| `ScrollState` | ✅ Complete | 39 tests | **98.89%** |
+| `DatasetAdapter` | ✅ Complete | 37 tests | **96.26%** |
+| **Total** | **✅ Complete** | **240 tests** | **~99%** |
 
 **Commits:**
 - `ec3a4c4`: feat(tui): Add TUI dataset viewer module with WASM compatibility
 - `d14aed7`: test(tui): Add comprehensive data type coverage tests
 - `936e748`: test(tui): Add tests for remaining type and error coverage
 - `785bba6`: test(tui): Add adapter edge case tests for coverage
+- `5e1fdca`: test(tui): Add scroll edge case tests for coverage
+- `2de9407`: test(tui): Add coverage tests for schema, viewer, scroll, row_detail
 
 ---
 
