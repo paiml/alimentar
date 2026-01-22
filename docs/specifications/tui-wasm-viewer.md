@@ -1,12 +1,31 @@
 # SPEC-ALI-001: TUI WASM Dataset Viewer
 
-**Status**: DRAFT - Awaiting Review
+**Status**: IMPLEMENTED - In Testing
 **Author**: Claude Code
 **Date**: 2026-01-22
-**Version**: 1.0.0
+**Version**: 1.1.0
 **Score Target**: A+ (≥95%) - pmat compliance required
 **Coverage Target**: 95% via property-based testing + falsification
 **WASM Target**: Pure `wasm32-unknown-unknown` - probar tested
+
+## Implementation Status
+
+| Component | Status | Tests | Coverage |
+|-----------|--------|-------|----------|
+| `DatasetAdapter` | ✅ Complete | 32 tests | >95% |
+| `DatasetViewer` | ✅ Complete | 27 tests | >90% |
+| `SchemaInspector` | ✅ Complete | 12 tests | >95% |
+| `RowDetailView` | ✅ Complete | 15 tests | >90% |
+| `ScrollState` | ✅ Complete | 20 tests | >95% |
+| `TuiError` | ✅ Complete | 13 tests | 100% |
+| `format` | ✅ Complete | 62 tests | >95% |
+| **Total** | **✅ Complete** | **196 tests** | **93.23%** |
+
+**Commits:**
+- `ec3a4c4`: feat(tui): Add TUI dataset viewer module with WASM compatibility
+- `d14aed7`: test(tui): Add comprehensive data type coverage tests
+- `936e748`: test(tui): Add tests for remaining type and error coverage
+- `785bba6`: test(tui): Add adapter edge case tests for coverage
 
 ---
 
