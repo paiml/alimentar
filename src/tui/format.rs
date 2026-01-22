@@ -708,4 +708,108 @@ mod tests {
         let ts_type = DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None);
         assert_eq!(type_name(&ts_type), "timestamp");
     }
+
+    #[test]
+    fn f_type_name_list() {
+        use arrow::datatypes::Field;
+        let list_type = DataType::List(Arc::new(Field::new("item", DataType::Int32, true)));
+        assert_eq!(type_name(&list_type), "list");
+    }
+
+    #[test]
+    fn f_type_name_large_list() {
+        use arrow::datatypes::Field;
+        let list_type = DataType::LargeList(Arc::new(Field::new("item", DataType::Int32, true)));
+        assert_eq!(type_name(&list_type), "large_list");
+    }
+
+    #[test]
+    fn f_type_name_struct() {
+        use arrow::datatypes::{Field, Fields};
+        let fields = Fields::from(vec![Field::new("a", DataType::Int32, false)]);
+        let struct_type = DataType::Struct(fields);
+        assert_eq!(type_name(&struct_type), "struct");
+    }
+
+    #[test]
+    fn f_type_name_map() {
+        use arrow::datatypes::Field;
+        let entries = Field::new(
+            "entries",
+            DataType::Struct(
+                vec![
+                    Field::new("key", DataType::Utf8, false),
+                    Field::new("value", DataType::Int32, true),
+                ]
+                .into(),
+            ),
+            false,
+        );
+        let map_type = DataType::Map(Arc::new(entries), false);
+        assert_eq!(type_name(&map_type), "map");
+    }
+
+    #[test]
+    fn f_type_name_dict() {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        assert_eq!(type_name(&dict_type), "dict");
+    }
+
+    #[test]
+    fn f_type_name_unknown() {
+        // Test a type that falls through to the catch-all
+        let interval_type = DataType::Interval(arrow::datatypes::IntervalUnit::DayTime);
+        assert_eq!(type_name(&interval_type), "unknown");
+    }
+
+    #[test]
+    fn f_format_timestamp_second() {
+        use arrow::array::TimestampSecondArray;
+        let array: ArrayRef = Arc::new(TimestampSecondArray::from(vec![Some(1_640_000_000), None]));
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("ts:"));
+    }
+
+    #[test]
+    fn f_format_timestamp_microsecond() {
+        use arrow::array::TimestampMicrosecondArray;
+        let array: ArrayRef = Arc::new(TimestampMicrosecondArray::from(vec![
+            Some(1_640_000_000_000_000),
+            None,
+        ]));
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("ts:"));
+    }
+
+    #[test]
+    fn f_format_timestamp_nanosecond() {
+        use arrow::array::TimestampNanosecondArray;
+        let array: ArrayRef = Arc::new(TimestampNanosecondArray::from(vec![
+            Some(1_640_000_000_000_000_000),
+            None,
+        ]));
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("ts:"));
+    }
+
+    #[test]
+    fn f_format_unsupported_type() {
+        // Test with an unsupported type that should show placeholder
+        use arrow::array::ListArray;
+        use arrow::buffer::OffsetBuffer;
+        use arrow::datatypes::Field;
+
+        let values = Int32Array::from(vec![1, 2, 3, 4, 5]);
+        let offsets = OffsetBuffer::new(vec![0, 2, 5].into());
+        let field = Arc::new(Field::new("item", DataType::Int32, true));
+        let array: ArrayRef = Arc::new(ListArray::new(field, offsets, Arc::new(values), None));
+
+        let result = format_array_value(array.as_ref(), 0).unwrap();
+        assert!(result.is_some());
+        // Should show <list> placeholder
+        assert!(result.unwrap().contains("list"));
+    }
 }
