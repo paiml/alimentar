@@ -104,6 +104,7 @@
 - [alimentar info](./cli/info.md)
 - [alimentar head](./cli/head.md)
 - [alimentar schema](./cli/schema.md)
+- [alimentar view](./cli/view.md)
 - [alimentar convert](./cli/convert.md)
 - [alimentar registry](./cli/registry.md)
 
