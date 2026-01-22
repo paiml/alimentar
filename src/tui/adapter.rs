@@ -580,4 +580,100 @@ mod tests {
             "FALSIFIED: usize::MAX column should not panic"
         );
     }
+
+    #[test]
+    fn f_adapter_from_dataset() {
+        // Create an ArrowDataset and test from_dataset
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let dataset = ArrowDataset::from_batch(batch).unwrap();
+
+        let adapter = DatasetAdapter::from_dataset(&dataset).unwrap();
+        assert_eq!(adapter.row_count(), 5);
+        assert_eq!(adapter.column_count(), 3);
+        assert_eq!(adapter.field_name(0), Some("id"));
+    }
+
+    #[test]
+    fn f_adapter_single_batch() {
+        // Test with a single batch (no cross-batch lookups)
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 10);
+        let adapter = DatasetAdapter::from_batches(vec![batch], schema).unwrap();
+
+        // First row
+        assert_eq!(adapter.get_cell(0, 0).unwrap(), Some("id_0".to_string()));
+        // Last row
+        assert_eq!(adapter.get_cell(9, 0).unwrap(), Some("id_9".to_string()));
+    }
+
+    #[test]
+    fn f_adapter_three_batches() {
+        // Test with three batches for more complex lookups
+        let schema = create_test_schema();
+        let batch1 = create_test_batch(&schema, 0, 3);
+        let batch2 = create_test_batch(&schema, 3, 4);
+        let batch3 = create_test_batch(&schema, 7, 3);
+        let adapter =
+            DatasetAdapter::from_batches(vec![batch1, batch2, batch3], schema.clone()).unwrap();
+
+        assert_eq!(adapter.row_count(), 10);
+
+        // Test row in first batch
+        assert_eq!(adapter.get_cell(2, 0).unwrap(), Some("id_2".to_string()));
+        // Test first row of second batch
+        assert_eq!(adapter.get_cell(3, 0).unwrap(), Some("id_3".to_string()));
+        // Test row in third batch
+        assert_eq!(adapter.get_cell(8, 0).unwrap(), Some("id_8".to_string()));
+    }
+
+    #[test]
+    fn f_adapter_boundary_row_lookup() {
+        // Test boundary conditions in locate_row
+        let schema = create_test_schema();
+        let batch1 = create_test_batch(&schema, 0, 5);
+        let batch2 = create_test_batch(&schema, 5, 5);
+        let adapter = DatasetAdapter::from_batches(vec![batch1, batch2], schema.clone()).unwrap();
+
+        // Test exact boundary (row 5 is first row of second batch)
+        let loc = adapter.locate_row(5);
+        assert_eq!(loc, Some((1, 0)));
+
+        // Row 4 is last row of first batch
+        let loc = adapter.locate_row(4);
+        assert_eq!(loc, Some((0, 4)));
+    }
+
+    #[test]
+    fn f_adapter_empty_batches_vec() {
+        // Test with empty vector of batches
+        let schema = create_test_schema();
+        let adapter = DatasetAdapter::from_batches(vec![], schema).unwrap();
+
+        assert_eq!(adapter.row_count(), 0);
+        assert!(adapter.is_empty());
+        assert_eq!(adapter.get_cell(0, 0).unwrap(), None);
+    }
+
+    #[test]
+    fn f_adapter_column_widths_no_data() {
+        // Test column widths with no data rows
+        let schema = create_test_schema();
+        let adapter = DatasetAdapter::from_batches(vec![], schema).unwrap();
+
+        let widths = adapter.calculate_column_widths(80, 10);
+        // Should still have widths based on header names
+        assert_eq!(widths.len(), 3);
+    }
+
+    #[test]
+    fn f_adapter_column_widths_very_narrow() {
+        // Test with extremely narrow width
+        let adapter = create_test_adapter();
+        let widths = adapter.calculate_column_widths(9, 5);
+        // Should have minimum width of 3 per column
+        for w in &widths {
+            assert!(*w >= 3);
+        }
+    }
 }
