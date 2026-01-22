@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2025-01-22
+
+### Added
+- Interactive TUI viewer with `alimentar view` command
+- Crossterm-based terminal driver with raw mode support
+- Keyboard navigation (arrows, vim keys, page up/down, home/end)
+- Search functionality with `/` key and `--search` flag
+- `DatasetAdapter` enum with InMemory and Streaming variants
+- Automatic mode selection based on dataset size (100K row threshold)
+- Unicode width calculation for proper column alignment
+- `tui_viewer.rs` example demonstrating viewer usage
+- CLI documentation for view command in book
+
+### Changed
+- TUI module refactored for WASM compatibility (55KB binary)
+- Search uses case-insensitive linear scan
+
 ## [0.2.4] - 2025-01-21
 
 ### Changed
