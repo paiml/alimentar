@@ -430,4 +430,36 @@ mod tests {
         // Title + blank + (field_name + value + blank) * 2
         assert!(total >= 8);
     }
+
+    #[test]
+    fn f_detail_page_down() {
+        let adapter = create_test_adapter();
+        let mut detail = RowDetailView::with_dimensions(&adapter, 1, 40, 5).unwrap();
+        let initial = detail.scroll_offset();
+        detail.page_down();
+        // Page down should increase offset (or stay same if at end)
+        assert!(detail.scroll_offset() >= initial);
+    }
+
+    #[test]
+    fn f_detail_page_up() {
+        let adapter = create_test_adapter();
+        let mut detail = RowDetailView::with_dimensions(&adapter, 1, 40, 5).unwrap();
+        // Scroll down first
+        detail.page_down();
+        detail.page_down();
+        let after_down = detail.scroll_offset();
+        // Now page up
+        detail.page_up();
+        // Should decrease or stay same
+        assert!(detail.scroll_offset() <= after_down);
+    }
+
+    #[test]
+    fn f_wrap_text_with_empty_line() {
+        let text = "First\n\nThird";
+        let wrapped = wrap_text(text, 50);
+        assert_eq!(wrapped.len(), 3);
+        assert_eq!(wrapped[1], "");
+    }
 }

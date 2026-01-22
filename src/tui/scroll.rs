@@ -507,4 +507,56 @@ mod tests {
         scroll.select_prev();
         assert_eq!(scroll.selected(), Some(0));
     }
+
+    #[test]
+    fn f_scroll_select_next_empty() {
+        // Select next on empty dataset
+        let mut scroll = ScrollState::new(0, 20);
+        scroll.select_next();
+        // Should still be None since total_rows is 0
+        assert_eq!(scroll.selected(), None);
+    }
+
+    #[test]
+    fn f_scroll_select_prev_empty() {
+        // Select prev on empty dataset
+        let mut scroll = ScrollState::new(0, 20);
+        scroll.select_prev();
+        // Should still be None since total_rows is 0
+        assert_eq!(scroll.selected(), None);
+    }
+
+    #[test]
+    fn f_scroll_scrollbar_position_small_content() {
+        // When total_rows <= visible_rows
+        let scroll = ScrollState::new(10, 20);
+        let pos = scroll.scrollbar_position();
+        assert!((pos - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn f_scroll_scrollbar_position_max_zero() {
+        // When max_offset is 0 (total_rows == visible_rows)
+        let scroll = ScrollState::new(20, 20);
+        let pos = scroll.scrollbar_position();
+        assert!((pos - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn f_scroll_scrollbar_size_empty() {
+        // When total_rows is 0
+        let scroll = ScrollState::new(0, 20);
+        let size = scroll.scrollbar_size();
+        assert!((size - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn f_scroll_set_total_rows_with_selection_clamps() {
+        // When selection is set and total_rows shrinks
+        let mut scroll = ScrollState::new(100, 20);
+        scroll.set_selected(Some(80));
+        // Shrink to 50 rows - selection should clamp to 49
+        scroll.set_total_rows(50);
+        assert_eq!(scroll.selected(), Some(49));
+    }
 }
