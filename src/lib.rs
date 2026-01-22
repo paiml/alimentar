@@ -97,6 +97,8 @@ pub mod weighted;
 pub mod doctest;
 #[cfg(feature = "repl")]
 pub mod repl;
+/// TUI dataset viewer module
+pub mod tui;
 
 // Re-exports for convenience
 // Re-export arrow types commonly needed
@@ -135,5 +137,6 @@ pub use transform::{
 };
 #[cfg(feature = "shuffle")]
 pub use transform::{Sample, Shuffle};
+pub use tui::{DatasetAdapter, DatasetViewer, RowDetailView, SchemaInspector, TuiError, TuiResult};
 #[cfg(feature = "shuffle")]
 pub use weighted::WeightedDataLoader;
