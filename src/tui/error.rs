@@ -156,4 +156,46 @@ mod tests {
         let err: Box<dyn std::error::Error> = Box::new(TuiError::EmptyDataset);
         assert!(err.to_string().contains("empty"));
     }
+
+    #[test]
+    fn f_error_display_schema_mismatch() {
+        let err = TuiError::SchemaMismatch {
+            description: "column count differs".to_string(),
+        };
+        let s = err.to_string();
+        assert!(s.contains("Schema mismatch"));
+        assert!(s.contains("column count differs"));
+    }
+
+    #[test]
+    fn f_error_display_unsupported_type() {
+        let err = TuiError::UnsupportedType {
+            type_name: "FixedSizeBinary".to_string(),
+        };
+        let s = err.to_string();
+        assert!(s.contains("Unsupported Arrow type"));
+        assert!(s.contains("FixedSizeBinary"));
+    }
+
+    #[test]
+    fn f_error_display_render_constraint() {
+        let err = TuiError::RenderConstraint {
+            description: "width exceeds terminal".to_string(),
+        };
+        let s = err.to_string();
+        assert!(s.contains("Render constraint"));
+        assert!(s.contains("width exceeds terminal"));
+    }
+
+    #[test]
+    fn f_error_display_invalid_scroll() {
+        let err = TuiError::InvalidScroll {
+            requested: 100,
+            max_valid: 80,
+        };
+        let s = err.to_string();
+        assert!(s.contains("Invalid scroll position"));
+        assert!(s.contains("100"));
+        assert!(s.contains("80"));
+    }
 }
