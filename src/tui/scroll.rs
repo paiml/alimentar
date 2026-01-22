@@ -455,4 +455,56 @@ mod tests {
         let cloned = scroll;
         assert_eq!(scroll.offset(), cloned.offset());
     }
+
+    #[test]
+    fn f_scroll_set_total_rows_shrink_to_zero() {
+        // Test shrinking to zero rows - should clear selection
+        let mut scroll = ScrollState::new(100, 20);
+        scroll.set_selected(Some(50));
+        scroll.set_total_rows(0);
+        assert_eq!(scroll.selected(), None);
+    }
+
+    #[test]
+    fn f_scroll_set_selected_out_of_bounds_empty() {
+        // Test selecting row out of bounds on empty scroll
+        let mut scroll = ScrollState::new(0, 20);
+        scroll.set_selected(Some(100));
+        // Should be None because total_rows is 0
+        assert_eq!(scroll.selected(), None);
+    }
+
+    #[test]
+    fn f_scroll_set_selected_out_of_bounds_clamps() {
+        // Test selecting row out of bounds - should clamp to last row
+        let mut scroll = ScrollState::new(50, 20);
+        scroll.set_selected(Some(100));
+        // Should clamp to last valid row (49)
+        assert_eq!(scroll.selected(), Some(49));
+    }
+
+    #[test]
+    fn f_scroll_set_total_rows_shrink_selection_out_of_bounds() {
+        // Selection at row 90, then shrink to 50 rows
+        let mut scroll = ScrollState::new(100, 20);
+        scroll.set_selected(Some(90));
+        scroll.set_total_rows(50);
+        // Selection should be clamped to 49
+        assert_eq!(scroll.selected(), Some(49));
+    }
+
+    #[test]
+    fn f_scroll_page_up_at_zero() {
+        let mut scroll = ScrollState::new(100, 20);
+        scroll.page_up();
+        assert_eq!(scroll.offset(), 0);
+    }
+
+    #[test]
+    fn f_scroll_select_prev_from_none() {
+        let mut scroll = ScrollState::new(100, 20);
+        // Select prev with no selection should select first row
+        scroll.select_prev();
+        assert_eq!(scroll.selected(), Some(0));
+    }
 }
