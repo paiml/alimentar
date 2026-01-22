@@ -356,4 +356,181 @@ mod tests {
         assert!(formatted.contains("Timestamp"));
         assert!(formatted.contains("ms"));
     }
+
+    #[test]
+    fn f_inspector_display_width() {
+        let adapter = create_test_adapter();
+        let inspector = SchemaInspector::new(&adapter);
+        // display_width should be reasonable (non-zero)
+        assert!(inspector.display_width() > 0);
+    }
+
+    #[test]
+    fn f_format_type_null() {
+        assert_eq!(format_type_name(&DataType::Null), "Null");
+    }
+
+    #[test]
+    fn f_format_type_boolean() {
+        assert_eq!(format_type_name(&DataType::Boolean), "Boolean");
+    }
+
+    #[test]
+    fn f_format_type_int8() {
+        assert_eq!(format_type_name(&DataType::Int8), "Int8");
+    }
+
+    #[test]
+    fn f_format_type_int16() {
+        assert_eq!(format_type_name(&DataType::Int16), "Int16");
+    }
+
+    #[test]
+    fn f_format_type_int64() {
+        assert_eq!(format_type_name(&DataType::Int64), "Int64");
+    }
+
+    #[test]
+    fn f_format_type_uint8() {
+        assert_eq!(format_type_name(&DataType::UInt8), "UInt8");
+    }
+
+    #[test]
+    fn f_format_type_uint16() {
+        assert_eq!(format_type_name(&DataType::UInt16), "UInt16");
+    }
+
+    #[test]
+    fn f_format_type_uint32() {
+        assert_eq!(format_type_name(&DataType::UInt32), "UInt32");
+    }
+
+    #[test]
+    fn f_format_type_uint64() {
+        assert_eq!(format_type_name(&DataType::UInt64), "UInt64");
+    }
+
+    #[test]
+    fn f_format_type_float16() {
+        assert_eq!(format_type_name(&DataType::Float16), "Float16");
+    }
+
+    #[test]
+    fn f_format_type_float64() {
+        assert_eq!(format_type_name(&DataType::Float64), "Float64");
+    }
+
+    #[test]
+    fn f_format_type_large_utf8() {
+        assert_eq!(format_type_name(&DataType::LargeUtf8), "LargeUtf8");
+    }
+
+    #[test]
+    fn f_format_type_binary() {
+        assert_eq!(format_type_name(&DataType::Binary), "Binary");
+    }
+
+    #[test]
+    fn f_format_type_large_binary() {
+        assert_eq!(format_type_name(&DataType::LargeBinary), "LargeBinary");
+    }
+
+    #[test]
+    fn f_format_type_date32() {
+        assert_eq!(format_type_name(&DataType::Date32), "Date32");
+    }
+
+    #[test]
+    fn f_format_type_date64() {
+        assert_eq!(format_type_name(&DataType::Date64), "Date64");
+    }
+
+    #[test]
+    fn f_format_type_timestamp_second() {
+        let ts = DataType::Timestamp(arrow::datatypes::TimeUnit::Second, None);
+        let formatted = format_type_name(&ts);
+        assert!(formatted.contains("[s]"));
+    }
+
+    #[test]
+    fn f_format_type_timestamp_microsecond() {
+        let ts = DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, None);
+        let formatted = format_type_name(&ts);
+        assert!(formatted.contains("[us]"));
+    }
+
+    #[test]
+    fn f_format_type_timestamp_nanosecond() {
+        let ts = DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None);
+        let formatted = format_type_name(&ts);
+        assert!(formatted.contains("[ns]"));
+    }
+
+    #[test]
+    fn f_format_type_timestamp_with_tz() {
+        let ts = DataType::Timestamp(
+            arrow::datatypes::TimeUnit::Millisecond,
+            Some(Arc::from("UTC")),
+        );
+        let formatted = format_type_name(&ts);
+        assert!(formatted.contains("UTC"));
+    }
+
+    #[test]
+    fn f_format_type_large_list() {
+        let list_type = DataType::LargeList(Arc::new(Field::new("item", DataType::Utf8, true)));
+        let formatted = format_type_name(&list_type);
+        assert!(formatted.contains("LargeList"));
+        assert!(formatted.contains("Utf8"));
+    }
+
+    #[test]
+    fn f_format_type_struct() {
+        let fields = vec![
+            Field::new("a", DataType::Int32, false),
+            Field::new("b", DataType::Utf8, true),
+        ];
+        let struct_type = DataType::Struct(fields.into());
+        let formatted = format_type_name(&struct_type);
+        assert!(formatted.contains("Struct"));
+        assert!(formatted.contains('2'));
+    }
+
+    #[test]
+    fn f_format_type_dictionary() {
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let formatted = format_type_name(&dict_type);
+        assert!(formatted.contains("Dict"));
+        assert!(formatted.contains("Int32"));
+        assert!(formatted.contains("Utf8"));
+    }
+
+    #[test]
+    fn f_format_type_map() {
+        let map_type = DataType::Map(
+            Arc::new(Field::new(
+                "entries",
+                DataType::Struct(
+                    vec![
+                        Field::new("key", DataType::Utf8, false),
+                        Field::new("value", DataType::Int32, true),
+                    ]
+                    .into(),
+                ),
+                false,
+            )),
+            false,
+        );
+        let formatted = format_type_name(&map_type);
+        assert!(formatted.contains("Map"));
+    }
+
+    #[test]
+    fn f_format_type_fallback() {
+        // Use a type that falls through to the debug fallback
+        let duration_type = DataType::Duration(arrow::datatypes::TimeUnit::Second);
+        let formatted = format_type_name(&duration_type);
+        // Should contain "Duration" from debug output
+        assert!(formatted.contains("Duration"));
+    }
 }

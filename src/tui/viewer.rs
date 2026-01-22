@@ -535,4 +535,48 @@ mod tests {
         let adapter = viewer.adapter();
         assert_eq!(adapter.column_count(), 3);
     }
+
+    #[test]
+    fn f_viewer_scrollbar_size() {
+        let viewer = create_test_viewer();
+        let size = viewer.scrollbar_size();
+        // Should be between 0 and 1
+        assert!(size > 0.0 && size <= 1.0);
+    }
+
+    #[test]
+    fn f_viewer_scrollbar_size_small_dataset() {
+        let adapter = create_test_adapter(5);
+        let viewer = DatasetViewer::with_dimensions(adapter, 80, 24);
+        let size = viewer.scrollbar_size();
+        // When all content fits, size should be 1.0
+        assert!((size - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn f_viewer_format_row_with_null() {
+        // Create a dataset with nullable column containing null
+        use arrow::array::NullArray;
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Utf8, false),
+            Field::new("nullable_col", DataType::Null, true),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec!["a", "b"])),
+                Arc::new(NullArray::new(2)),
+            ],
+        )
+        .unwrap();
+
+        let adapter = DatasetAdapter::from_batches(vec![batch], schema).unwrap();
+        let viewer = DatasetViewer::new(adapter);
+        let rows = viewer.visible_rows_data();
+
+        // Should have rows and the null column should be empty string
+        assert!(!rows.is_empty());
+    }
 }
