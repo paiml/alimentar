@@ -1,12 +1,11 @@
 # SPEC-ALI-001: TUI WASM Dataset Viewer
 
-**Status**: ✅ COMPLETE (Falsification-Hardened)
+**Status**: RELEASE CANDIDATE
 **Author**: Claude Code
 **Date**: 2026-01-22
 **Version**: 1.3.0
-**Score Target**: A+ (≥95%) - pmat compliance achieved
-**Coverage Target**: 95% via property-based testing + falsification ✅
-**WASM Target**: Pure `wasm32-unknown-unknown` - probar tested
+**Score Target**: A+ (≥95%) - pmat compliance required
+
 
 ## Implementation Status
 
@@ -167,6 +166,25 @@ This specification defines a **pure WASM TUI dataset viewer** for alimentar that
 - Dataset: `paiml/rust-cli-docs-corpus` on HuggingFace
 - 80 train / 10 validation / 10 test rows
 - 11 columns: id, input, output, category, source_repo, etc.
+
+### 1.1 Usage Interface (The Missing Link)
+
+The TUI Viewer MUST be accessible via the standard CLI.
+
+**Command:**
+```bash
+alimentar view <PATH> [OPTIONS]
+```
+
+**Options:**
+- `-n, --lines <N>`: Initial number of rows to load (default: 100)
+- `--streaming`: Force streaming mode (F103)
+- `--search <QUERY>`: fast-forward to first match (F101)
+
+**Example:**
+```bash
+alimentar view ./data.parquet --search "PathCompleter"
+```
 
 ## 2. Design Principles
 

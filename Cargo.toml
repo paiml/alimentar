@@ -20,7 +20,7 @@ tokio-runtime = ["dep:tokio"]
 s3 = ["dep:aws-sdk-s3", "dep:aws-config", "tokio-runtime"]
 http = ["dep:reqwest"]
 hf-hub = ["http", "dep:base64", "dep:hex", "dep:sha2"]
-cli = ["dep:clap"]
+cli = ["dep:clap", "dep:crossterm"]
 repl = ["cli", "dep:reedline", "dep:nu-ansi-term"]
 wasm = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:getrandom"]
 format-encryption = ["dep:aes-gcm", "dep:argon2", "dep:x25519-dalek", "dep:hkdf", "dep:sha2", "dep:rand_core", "dep:getrandom"]
@@ -54,6 +54,7 @@ memmap2 = { version = "0.9", optional = true }
 
 # CLI (optional, not for WASM)
 clap = { version = "4", features = ["derive"], optional = true }
+crossterm = { version = "0.28", optional = true }
 
 # REPL (feature-gated)
 reedline = { version = "0.37", optional = true }
