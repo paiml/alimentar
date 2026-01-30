@@ -859,4 +859,208 @@ mod tests {
         let result = cmd_quality_profiles();
         assert!(result.is_ok());
     }
+
+    // === Additional quality CLI tests ===
+
+    #[test]
+    fn test_cmd_quality_check_with_high_null_threshold() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("data.parquet");
+        create_test_parquet(&path, 100);
+
+        // Use very high null threshold
+        let result = cmd_quality_check(&path, 0.9, 0.9, true, "text");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_quality_check_small_dataset() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("small.parquet");
+        create_test_parquet(&path, 5);
+
+        let result = cmd_quality_check(&path, 0.1, 0.05, true, "text");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_quality_check_large_dataset() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("large.parquet");
+        create_test_parquet(&path, 500);
+
+        let result = cmd_quality_check(&path, 0.1, 0.05, false, "json");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_quality_score_ml_training_profile() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("ml.parquet");
+        create_test_parquet(&path, 150);
+
+        let result = cmd_quality_score(&path, "ml-training", false, false, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_quality_score_invalid_profile() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("data.parquet");
+        create_test_parquet(&path, 100);
+
+        let result = cmd_quality_score(&path, "nonexistent-profile", false, false, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cmd_quality_score_all_output_modes() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("data.parquet");
+        create_test_parquet(&path, 100);
+
+        // Test text output
+        let result = cmd_quality_score(&path, "default", false, false, false);
+        assert!(result.is_ok());
+
+        // Test JSON output
+        let result = cmd_quality_score(&path, "default", false, true, false);
+        assert!(result.is_ok());
+
+        // Test badge output
+        let result = cmd_quality_score(&path, "default", false, false, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_quality_report_to_stdout() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("data.parquet");
+        create_test_parquet(&path, 50);
+
+        // Output to stdout (None)
+        let result = cmd_quality_report(&path, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_build_checklist_from_report_empty_dataset() {
+        // Create empty-ish dataset scenario
+        use crate::quality::{QualityChecker, QualityProfile};
+
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+
+        let batch =
+            arrow::array::RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(vec![1]))])
+                .unwrap();
+
+        let dataset = ArrowDataset::from_batch(batch).unwrap();
+        let report = QualityChecker::new().check(&dataset).unwrap();
+        let profile = QualityProfile::by_name("default").unwrap();
+
+        let checklist = build_checklist_from_report(&report, &profile);
+
+        // Should have checklist items
+        assert!(!checklist.is_empty());
+
+        // Check that we have critical, high, medium, low items
+        let has_critical = checklist
+            .iter()
+            .any(|i| i.severity == crate::quality::Severity::Critical);
+        let has_high = checklist
+            .iter()
+            .any(|i| i.severity == crate::quality::Severity::High);
+        let has_medium = checklist
+            .iter()
+            .any(|i| i.severity == crate::quality::Severity::Medium);
+        let has_low = checklist
+            .iter()
+            .any(|i| i.severity == crate::quality::Severity::Low);
+
+        assert!(has_critical);
+        assert!(has_high);
+        assert!(has_medium);
+        assert!(has_low);
+    }
+
+    #[test]
+    fn test_build_checklist_high_quality_dataset() {
+        use crate::quality::{QualityChecker, QualityProfile};
+
+        // Create a high-quality dataset
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new("name", DataType::Utf8, false),
+        ]));
+
+        let ids: Vec<i32> = (0..200).collect();
+        let names: Vec<String> = ids.iter().map(|i| format!("name_{}", i)).collect();
+
+        let batch = arrow::array::RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int32Array::from(ids)),
+                Arc::new(StringArray::from(names)),
+            ],
+        )
+        .unwrap();
+
+        let dataset = ArrowDataset::from_batch(batch).unwrap();
+        let report = QualityChecker::new().check(&dataset).unwrap();
+        let profile = QualityProfile::by_name("default").unwrap();
+
+        let checklist = build_checklist_from_report(&report, &profile);
+
+        // Count passed items
+        let passed = checklist.iter().filter(|i| i.passed).count();
+        // A good dataset should have most checks passing
+        assert!(passed > checklist.len() / 2);
+    }
+
+    #[test]
+    fn test_cmd_quality_check_with_issues() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("issues.parquet");
+
+        // Create dataset with potential issues (constant column)
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new("constant", DataType::Int32, false),
+        ]));
+
+        let ids: Vec<i32> = (0..50).collect();
+        let constants: Vec<i32> = vec![42; 50];
+
+        let batch = arrow::array::RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int32Array::from(ids)),
+                Arc::new(Int32Array::from(constants)),
+            ],
+        )
+        .unwrap();
+
+        let dataset = ArrowDataset::from_batch(batch).unwrap();
+        dataset.to_parquet(&path).unwrap();
+
+        // Should handle issues gracefully
+        let result = cmd_quality_check(&path, 0.1, 0.05, true, "text");
+        assert!(result.is_ok());
+    }
 }

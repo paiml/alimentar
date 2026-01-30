@@ -104,6 +104,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.6"
 assert_cmd = "2"
 predicates = "3"
+jugar-probar = "1.0.1"
 
 [[bin]]
 name = "alimentar"

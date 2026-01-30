@@ -63,6 +63,7 @@ pub(crate) fn cmd_import_hf(
     subset: Option<&str>,
     split: &str,
 ) -> crate::Result<()> {
+    use crate::dataset::Dataset;
     use crate::hf_hub::HfDataset;
 
     println!("Importing {} from HuggingFace Hub...", repo_id);

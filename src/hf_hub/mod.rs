@@ -44,5 +44,7 @@ pub use validation::{
 };
 
 // Internal re-exports for tests
+#[cfg(test)]
 pub(crate) use download::default_cache_dir;
+#[cfg(test)]
 pub(crate) use upload::HF_API_URL;

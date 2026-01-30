@@ -994,3 +994,301 @@ fn test_load_from_file_with_options_not_found() {
     let result = load_from_file_with_options("/nonexistent/path/test.ald", &LoadOptions::default());
     assert!(result.is_err());
 }
+
+// === Additional edge case tests ===
+
+#[test]
+fn test_load_payload_extends_beyond_data() {
+    // Create a valid header but with incorrect payload_size that exceeds data
+    let batch = create_test_batch();
+    let batches = vec![batch];
+
+    let mut buf = Vec::new();
+    save(
+        &mut buf,
+        &batches,
+        DatasetType::Tabular,
+        &SaveOptions::default(),
+    )
+    .expect("save failed");
+
+    // Corrupt payload_size in header to be too large
+    // payload_size is at offset 12-15
+    buf[12] = 0xFF;
+    buf[13] = 0xFF;
+    buf[14] = 0xFF;
+    buf[15] = 0xFF; // Set to max u32
+
+    let result = load(&mut std::io::Cursor::new(&buf));
+    // This should fail due to checksum mismatch (since we corrupted the header)
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_all_dataset_types_save_load() {
+    let all_types = [
+        DatasetType::Tabular,
+        DatasetType::TimeSeries,
+        DatasetType::Graph,
+        DatasetType::Spatial,
+        DatasetType::TextCorpus,
+        DatasetType::TextClassification,
+        DatasetType::TextPairs,
+        DatasetType::SequenceLabeling,
+        DatasetType::QuestionAnswering,
+        DatasetType::Summarization,
+        DatasetType::Translation,
+        DatasetType::ImageClassification,
+        DatasetType::ObjectDetection,
+        DatasetType::Segmentation,
+        DatasetType::ImagePairs,
+        DatasetType::Video,
+        DatasetType::AudioClassification,
+        DatasetType::SpeechRecognition,
+        DatasetType::SpeakerIdentification,
+        DatasetType::UserItemRatings,
+        DatasetType::ImplicitFeedback,
+        DatasetType::SequentialRecs,
+        DatasetType::ImageText,
+        DatasetType::AudioText,
+        DatasetType::VideoText,
+        DatasetType::Custom,
+    ];
+
+    let batch = create_test_batch();
+    let batches = vec![batch];
+
+    for dt in all_types {
+        let mut buf = Vec::new();
+        save(&mut buf, &batches, dt, &SaveOptions::default()).expect("save failed");
+
+        let loaded = load(&mut std::io::Cursor::new(&buf)).expect("load failed");
+        assert_eq!(loaded.header.dataset_type, dt);
+    }
+}
+
+#[test]
+fn test_header_eq() {
+    let header1 = Header::new(DatasetType::Tabular);
+    let header2 = Header::new(DatasetType::Tabular);
+    let header3 = Header::new(DatasetType::Graph);
+
+    assert_eq!(header1, header2);
+    assert_ne!(header1, header3);
+}
+
+#[test]
+fn test_dataset_type_eq() {
+    let dt1 = DatasetType::Tabular;
+    let dt2 = DatasetType::Tabular;
+    let dt3 = DatasetType::Graph;
+
+    assert_eq!(dt1, dt2);
+    assert_ne!(dt1, dt3);
+}
+
+#[test]
+fn test_compression_eq() {
+    let c1 = Compression::Lz4;
+    let c2 = Compression::Lz4;
+    let c3 = Compression::ZstdL3;
+
+    assert_eq!(c1, c2);
+    assert_ne!(c1, c3);
+}
+
+#[test]
+fn test_metadata_serialization() {
+    let metadata = Metadata {
+        name: Some("test".to_string()),
+        version: Some("1.0.0".to_string()),
+        license: Some("MIT".to_string()),
+        tags: vec!["ml".to_string(), "nlp".to_string()],
+        description: Some("A test dataset".to_string()),
+        citation: Some("@article{...}".to_string()),
+        created_at: Some("2024-01-01T00:00:00Z".to_string()),
+        sha256: Some("abc123def456".to_string()),
+    };
+
+    // Serialize to MessagePack
+    let bytes = rmp_serde::to_vec(&metadata).expect("serialize");
+
+    // Deserialize back
+    let parsed: Metadata = rmp_serde::from_slice(&bytes).expect("deserialize");
+
+    assert_eq!(parsed.name, metadata.name);
+    assert_eq!(parsed.version, metadata.version);
+    assert_eq!(parsed.license, metadata.license);
+    assert_eq!(parsed.tags, metadata.tags);
+    assert_eq!(parsed.description, metadata.description);
+    assert_eq!(parsed.sha256, metadata.sha256);
+}
+
+#[test]
+fn test_header_byte_layout() {
+    let header = Header {
+        version: (1, 2),
+        dataset_type: DatasetType::Tabular,
+        metadata_size: 0x12345678,
+        payload_size: 0xABCDEF01,
+        uncompressed_size: 0x11223344,
+        compression: Compression::ZstdL3,
+        flags: 0x55,
+        schema_size: 0x6677,
+        num_rows: 0x123456789ABCDEF0,
+    };
+
+    let bytes = header.to_bytes();
+
+    // Verify magic
+    assert_eq!(&bytes[0..4], &MAGIC);
+
+    // Verify version
+    assert_eq!(bytes[4], 1);
+    assert_eq!(bytes[5], 2);
+
+    // Verify dataset type (little-endian)
+    assert_eq!(bytes[6], 0x01); // Tabular = 0x0001
+    assert_eq!(bytes[7], 0x00);
+
+    // Verify flags
+    assert_eq!(bytes[21], 0x55);
+}
+
+#[test]
+fn test_save_options_default_fields() {
+    let options = SaveOptions::default();
+
+    assert_eq!(options.compression, Compression::ZstdL3);
+    assert!(options.metadata.is_none());
+    assert!(options.license.is_none());
+}
+
+#[test]
+fn test_load_options_default_fields() {
+    let options = LoadOptions::default();
+
+    assert!(!options.verify_license);
+}
+
+#[test]
+fn test_header_full_roundtrip_all_values() {
+    // Test with all fields set to non-zero values
+    let header = Header {
+        version: (1, 2),
+        dataset_type: DatasetType::VideoText,
+        metadata_size: u32::MAX - 1,
+        payload_size: u32::MAX - 2,
+        uncompressed_size: u32::MAX - 3,
+        compression: Compression::Lz4,
+        flags: 0xFF,
+        schema_size: u16::MAX - 1,
+        num_rows: u64::MAX - 1,
+    };
+
+    let bytes = header.to_bytes();
+    let parsed = Header::from_bytes(&bytes).expect("parse");
+
+    assert_eq!(parsed.version, header.version);
+    assert_eq!(parsed.dataset_type, header.dataset_type);
+    assert_eq!(parsed.metadata_size, header.metadata_size);
+    assert_eq!(parsed.payload_size, header.payload_size);
+    assert_eq!(parsed.uncompressed_size, header.uncompressed_size);
+    assert_eq!(parsed.compression, header.compression);
+    assert_eq!(parsed.flags, header.flags);
+    assert_eq!(parsed.schema_size, header.schema_size);
+    assert_eq!(parsed.num_rows, header.num_rows);
+}
+
+#[test]
+fn test_crc32_function() {
+    // Test CRC32 with known values
+    let data = b"hello world";
+    let crc = crc32(data);
+    // CRC32 should be deterministic
+    assert_eq!(crc, crc32(data));
+
+    // Different data should produce different CRC
+    let other_data = b"hello worlD";
+    assert_ne!(crc, crc32(other_data));
+}
+
+#[test]
+fn test_metadata_with_all_fields_save_load() {
+    let batch = create_test_batch();
+    let batches = vec![batch];
+
+    let options = SaveOptions::default().with_metadata(Metadata {
+        name: Some("full-metadata-test".to_string()),
+        version: Some("2.0.0".to_string()),
+        license: Some("Apache-2.0".to_string()),
+        tags: vec!["tag1".to_string(), "tag2".to_string(), "tag3".to_string()],
+        description: Some("A comprehensive test with all metadata fields".to_string()),
+        citation: Some("@inproceedings{test2024}".to_string()),
+        created_at: Some("2024-06-15T12:00:00Z".to_string()),
+        sha256: Some("0123456789abcdef".repeat(4)),
+    });
+
+    let mut buf = Vec::new();
+    save(&mut buf, &batches, DatasetType::Tabular, &options).expect("save failed");
+
+    let loaded = load(&mut std::io::Cursor::new(&buf)).expect("load failed");
+
+    assert_eq!(loaded.metadata.name, Some("full-metadata-test".to_string()));
+    assert_eq!(loaded.metadata.version, Some("2.0.0".to_string()));
+    assert_eq!(loaded.metadata.license, Some("Apache-2.0".to_string()));
+    assert_eq!(loaded.metadata.tags.len(), 3);
+    assert!(loaded.metadata.description.is_some());
+    assert!(loaded.metadata.citation.is_some());
+    assert!(loaded.metadata.created_at.is_some());
+}
+
+#[test]
+fn test_save_large_dataset() {
+    // Create multiple batches to simulate a larger dataset
+    let batches: Vec<_> = (0..10).map(|_| create_test_batch()).collect();
+
+    let mut buf = Vec::new();
+    save(
+        &mut buf,
+        &batches,
+        DatasetType::Tabular,
+        &SaveOptions::default(),
+    )
+    .expect("save failed");
+
+    let loaded = load(&mut std::io::Cursor::new(&buf)).expect("load failed");
+
+    // Total rows should be 10 batches * 5 rows = 50
+    assert_eq!(loaded.header.num_rows, 50);
+}
+
+#[test]
+fn test_dataset_type_serde() {
+    use serde_json;
+
+    let dt = DatasetType::QuestionAnswering;
+
+    // Serialize to JSON
+    let json = serde_json::to_string(&dt).expect("serialize");
+
+    // Deserialize back
+    let parsed: DatasetType = serde_json::from_str(&json).expect("deserialize");
+
+    assert_eq!(parsed, dt);
+}
+
+#[test]
+fn test_compression_serde() {
+    use serde_json;
+
+    let c = Compression::ZstdL19;
+
+    // Serialize to JSON
+    let json = serde_json::to_string(&c).expect("serialize");
+
+    // Deserialize back
+    let parsed: Compression = serde_json::from_str(&json).expect("deserialize");
+
+    assert_eq!(parsed, c);
+}
