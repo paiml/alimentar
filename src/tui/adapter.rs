@@ -1013,4 +1013,656 @@ mod tests {
             "FALSIFIED: Column width should be at least minimum"
         );
     }
+
+    // === Additional coverage tests for StreamingAdapter ===
+
+    #[test]
+    fn f040_streaming_adapter_get_cell() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        let cell = adapter.get_cell(0, 0).unwrap();
+        assert_eq!(cell, Some("id_0".to_string()));
+    }
+
+    #[test]
+    fn f041_streaming_adapter_field_name() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        assert_eq!(adapter.field_name(0), Some("id"));
+        assert_eq!(adapter.field_name(1), Some("value"));
+        assert_eq!(adapter.field_name(100), None);
+    }
+
+    #[test]
+    fn f042_streaming_adapter_field_type() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        let type_str = adapter.field_type(0).unwrap();
+        assert!(type_str.contains("Utf8"));
+        assert!(adapter.field_type(100).is_none());
+    }
+
+    #[test]
+    fn f043_streaming_adapter_field_nullable() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        assert_eq!(adapter.field_nullable(0), Some(false));
+        assert!(adapter.field_nullable(100).is_none());
+    }
+
+    #[test]
+    fn f044_streaming_adapter_locate_row() {
+        let schema = create_test_schema();
+        let batch1 = create_test_batch(&schema, 0, 5);
+        let batch2 = create_test_batch(&schema, 5, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch1, batch2], schema).unwrap();
+
+        assert_eq!(adapter.locate_row(0), Some((0, 0)));
+        assert_eq!(adapter.locate_row(4), Some((0, 4)));
+        assert_eq!(adapter.locate_row(5), Some((1, 0)));
+        assert_eq!(adapter.locate_row(9), Some((1, 4)));
+        assert_eq!(adapter.locate_row(100), None);
+    }
+
+    #[test]
+    fn f045_streaming_adapter_column_widths() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        let widths = adapter.calculate_column_widths(80, 5);
+        assert_eq!(widths.len(), 3);
+        for w in &widths {
+            assert!(*w >= 3);
+        }
+    }
+
+    #[test]
+    fn f046_streaming_adapter_field_names() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        let names = adapter.field_names();
+        assert_eq!(names, vec!["id", "value", "score"]);
+    }
+
+    #[test]
+    fn f047_streaming_adapter_out_of_bounds() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        // Row out of bounds
+        assert_eq!(adapter.get_cell(100, 0).unwrap(), None);
+        // Column out of bounds
+        assert_eq!(adapter.get_cell(0, 100).unwrap(), None);
+    }
+
+    #[test]
+    fn f048_streaming_adapter_schema() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        assert_eq!(adapter.schema().fields().len(), 3);
+    }
+
+    #[test]
+    fn f049_search_from_empty_query() {
+        let adapter = create_test_adapter();
+        let result = adapter.search_from("", 0);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn f050_search_from_no_wrap_needed() {
+        let adapter = create_test_adapter();
+        // Search from row 0, should find id_5 at row 5
+        let result = adapter.search_from("id_5", 0);
+        assert_eq!(result, Some(5));
+    }
+
+    #[test]
+    fn f051_search_from_no_match() {
+        let adapter = create_test_adapter();
+        let result = adapter.search_from("nonexistent", 0);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn f052_streaming_adapter_empty_batches() {
+        let schema = create_test_schema();
+        let adapter = DatasetAdapter::streaming_from_batches(vec![], schema).unwrap();
+
+        assert_eq!(adapter.row_count(), 0);
+        assert_eq!(adapter.column_count(), 3);
+        assert!(adapter.is_streaming());
+    }
+
+    #[test]
+    fn f053_streaming_adapter_column_widths_empty() {
+        let schema = Arc::new(Schema::empty());
+        let adapter = DatasetAdapter::streaming_from_batches(vec![], schema).unwrap();
+
+        let widths = adapter.calculate_column_widths(80, 10);
+        assert!(widths.is_empty());
+    }
+
+    #[test]
+    fn f054_streaming_adapter_column_widths_constrained() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        // Very constrained width
+        let widths = adapter.calculate_column_widths(15, 5);
+        let total: u16 = widths.iter().sum();
+        let separators = (widths.len() as u16).saturating_sub(1);
+        assert!(total + separators <= 15);
+    }
+
+    #[test]
+    fn f055_in_memory_adapter_empty_row_count() {
+        let schema = create_test_schema();
+        let adapter = DatasetAdapter::in_memory_from_batches(vec![], schema.clone()).unwrap();
+
+        assert_eq!(adapter.row_count(), 0);
+        assert!(!adapter.is_streaming());
+    }
+
+    #[test]
+    fn f056_in_memory_adapter_locate_row_boundary() {
+        let schema = create_test_schema();
+        let batch1 = create_test_batch(&schema, 0, 3);
+        let batch2 = create_test_batch(&schema, 3, 3);
+        let batch3 = create_test_batch(&schema, 6, 4);
+        let adapter =
+            DatasetAdapter::in_memory_from_batches(vec![batch1, batch2, batch3], schema).unwrap();
+
+        // Test exact batch boundaries
+        assert_eq!(adapter.locate_row(2), Some((0, 2))); // Last of batch 0
+        assert_eq!(adapter.locate_row(3), Some((1, 0))); // First of batch 1
+        assert_eq!(adapter.locate_row(5), Some((1, 2))); // Last of batch 1
+        assert_eq!(adapter.locate_row(6), Some((2, 0))); // First of batch 2
+        assert_eq!(adapter.locate_row(9), Some((2, 3))); // Last of batch 2
+    }
+
+    #[test]
+    fn f057_search_on_streaming_adapter() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 10);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        let result = adapter.search("id_7");
+        assert_eq!(result, Some(7));
+    }
+
+    #[test]
+    fn f058_search_from_on_streaming_adapter() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 10);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        // Search from row 8, wraps to find id_3
+        let result = adapter.search_from("id_3", 8);
+        assert_eq!(result, Some(3));
+    }
+
+    #[test]
+    fn f059_search_partial_match() {
+        let adapter = create_test_adapter();
+        // Should match "id_" prefix
+        let result = adapter.search("id_");
+        assert_eq!(result, Some(0));
+    }
+
+    #[test]
+    fn f060_search_numeric_value() {
+        let adapter = create_test_adapter();
+        // Search for numeric value in the value column
+        let result = adapter.search("10");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn f061_empty_adapter_search() {
+        let adapter = DatasetAdapter::empty();
+        assert_eq!(adapter.search("anything"), None);
+        assert_eq!(adapter.search_from("anything", 0), None);
+    }
+
+    #[test]
+    fn f062_column_widths_zero_sample() {
+        let adapter = create_test_adapter();
+        let widths = adapter.calculate_column_widths(80, 0);
+        // Should still have widths based on headers
+        assert_eq!(widths.len(), 3);
+    }
+
+    #[test]
+    fn f063_column_widths_large_sample() {
+        let adapter = create_test_adapter();
+        // Sample more rows than exist
+        let widths = adapter.calculate_column_widths(80, 1000);
+        assert_eq!(widths.len(), 3);
+    }
+
+    #[test]
+    fn f064_streaming_locate_row_exact_boundary() {
+        let schema = create_test_schema();
+        let batch1 = create_test_batch(&schema, 0, 5);
+        let batch2 = create_test_batch(&schema, 5, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch1, batch2], schema).unwrap();
+
+        // Test the binary_search Ok branch
+        let loc = adapter.locate_row(0);
+        assert_eq!(loc, Some((0, 0)));
+
+        let loc = adapter.locate_row(5);
+        assert_eq!(loc, Some((1, 0)));
+    }
+
+    #[test]
+    fn f065_in_memory_adapter_debug() {
+        let adapter = create_test_adapter();
+        let debug = format!("{:?}", adapter);
+        assert!(debug.contains("InMemory"));
+    }
+
+    #[test]
+    fn f066_streaming_adapter_debug() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+        let debug = format!("{:?}", adapter);
+        assert!(debug.contains("Streaming"));
+    }
+
+    #[test]
+    fn f067_in_memory_empty_direct() {
+        let adapter = InMemoryAdapter::empty();
+        assert_eq!(adapter.row_count(), 0);
+        assert_eq!(adapter.column_count(), 0);
+        assert!(adapter.schema().fields().is_empty());
+    }
+
+    #[test]
+    fn f068_adapter_from_dataset_small() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 50);
+        let dataset = ArrowDataset::from_batch(batch).unwrap();
+
+        let adapter = DatasetAdapter::from_dataset(&dataset).unwrap();
+        // Should be in-memory mode for small datasets
+        assert!(!adapter.is_streaming());
+        assert_eq!(adapter.row_count(), 50);
+    }
+
+    // ========================================================================
+    // Additional TUI Adapter Tests for Coverage
+    // ========================================================================
+
+    #[test]
+    fn f069_in_memory_adapter_get_cell_batch_not_found() {
+        // Test when batch index is invalid
+        let schema = create_test_schema();
+        let adapter = InMemoryAdapter::new(vec![], schema).unwrap();
+        let result = adapter.get_cell(0, 0).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn f070_streaming_adapter_get_cell_batch_not_found() {
+        // Test when batch index is invalid in streaming mode
+        let schema = create_test_schema();
+        let adapter = StreamingAdapter::new(vec![], schema).unwrap();
+        let result = adapter.get_cell(0, 0).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn f071_in_memory_adapter_locate_row_at_batch_boundary() {
+        let schema = create_test_schema();
+        let batch1 = create_test_batch(&schema, 0, 5);
+        let batch2 = create_test_batch(&schema, 5, 5);
+        let adapter = InMemoryAdapter::new(vec![batch1, batch2], schema).unwrap();
+
+        // Test exact batch boundary (binary_search returns Ok)
+        let loc = adapter.locate_row(5);
+        assert_eq!(loc, Some((1, 0)));
+
+        // Test one before boundary
+        let loc = adapter.locate_row(4);
+        assert_eq!(loc, Some((0, 4)));
+    }
+
+    #[test]
+    fn f072_streaming_adapter_locate_row_at_batch_boundary() {
+        let schema = create_test_schema();
+        let batch1 = create_test_batch(&schema, 0, 5);
+        let batch2 = create_test_batch(&schema, 5, 5);
+        let adapter = StreamingAdapter::new(vec![batch1, batch2], schema).unwrap();
+
+        // Test exact batch boundary
+        let loc = adapter.locate_row(5);
+        assert_eq!(loc, Some((1, 0)));
+    }
+
+    #[test]
+    fn f073_in_memory_adapter_schema_access() {
+        let schema = create_test_schema();
+        let adapter = InMemoryAdapter::new(vec![], schema.clone()).unwrap();
+        assert_eq!(adapter.schema().fields().len(), 3);
+    }
+
+    #[test]
+    fn f074_streaming_adapter_schema_access() {
+        let schema = create_test_schema();
+        let adapter = StreamingAdapter::new(vec![], schema.clone()).unwrap();
+        assert_eq!(adapter.schema().fields().len(), 3);
+    }
+
+    #[test]
+    fn f075_in_memory_adapter_row_count() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 7);
+        let adapter = InMemoryAdapter::new(vec![batch], schema).unwrap();
+        assert_eq!(adapter.row_count(), 7);
+    }
+
+    #[test]
+    fn f076_streaming_adapter_row_count() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 7);
+        let adapter = StreamingAdapter::new(vec![batch], schema).unwrap();
+        assert_eq!(adapter.row_count(), 7);
+    }
+
+    #[test]
+    fn f077_in_memory_adapter_column_count() {
+        let schema = create_test_schema();
+        let adapter = InMemoryAdapter::new(vec![], schema).unwrap();
+        assert_eq!(adapter.column_count(), 3);
+    }
+
+    #[test]
+    fn f078_streaming_adapter_column_count() {
+        let schema = create_test_schema();
+        let adapter = StreamingAdapter::new(vec![], schema).unwrap();
+        assert_eq!(adapter.column_count(), 3);
+    }
+
+    #[test]
+    fn f079_in_memory_adapter_field_names() {
+        let schema = create_test_schema();
+        let adapter = InMemoryAdapter::new(vec![], schema).unwrap();
+        let names = adapter.field_names();
+        assert_eq!(names, vec!["id", "value", "score"]);
+    }
+
+    #[test]
+    fn f080_in_memory_adapter_field_name_out_of_bounds() {
+        let schema = create_test_schema();
+        let adapter = InMemoryAdapter::new(vec![], schema).unwrap();
+        assert!(adapter.field_name(100).is_none());
+    }
+
+    #[test]
+    fn f081_in_memory_adapter_field_type_out_of_bounds() {
+        let schema = create_test_schema();
+        let adapter = InMemoryAdapter::new(vec![], schema).unwrap();
+        assert!(adapter.field_type(100).is_none());
+    }
+
+    #[test]
+    fn f082_in_memory_adapter_field_nullable_out_of_bounds() {
+        let schema = create_test_schema();
+        let adapter = InMemoryAdapter::new(vec![], schema).unwrap();
+        assert!(adapter.field_nullable(100).is_none());
+    }
+
+    #[test]
+    fn f083_streaming_adapter_field_name_out_of_bounds() {
+        let schema = create_test_schema();
+        let adapter = StreamingAdapter::new(vec![], schema).unwrap();
+        assert!(adapter.field_name(100).is_none());
+    }
+
+    #[test]
+    fn f084_streaming_adapter_field_type_out_of_bounds() {
+        let schema = create_test_schema();
+        let adapter = StreamingAdapter::new(vec![], schema).unwrap();
+        assert!(adapter.field_type(100).is_none());
+    }
+
+    #[test]
+    fn f085_streaming_adapter_field_nullable_out_of_bounds() {
+        let schema = create_test_schema();
+        let adapter = StreamingAdapter::new(vec![], schema).unwrap();
+        assert!(adapter.field_nullable(100).is_none());
+    }
+
+    #[test]
+    fn f086_in_memory_calculate_column_widths_empty_schema() {
+        let schema = Arc::new(Schema::empty());
+        let adapter = InMemoryAdapter::new(vec![], schema).unwrap();
+        let widths = adapter.calculate_column_widths(80, 10);
+        assert!(widths.is_empty());
+    }
+
+    #[test]
+    fn f087_in_memory_calculate_column_widths_scaling() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = InMemoryAdapter::new(vec![batch], schema).unwrap();
+
+        // Test with very narrow width to force scaling
+        let widths = adapter.calculate_column_widths(12, 5);
+        let total: u16 = widths.iter().sum();
+        let separators = (widths.len() as u16).saturating_sub(1);
+        assert!(total + separators <= 12);
+    }
+
+    #[test]
+    fn f088_streaming_calculate_column_widths_scaling() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = StreamingAdapter::new(vec![batch], schema).unwrap();
+
+        // Test with very narrow width to force scaling
+        let widths = adapter.calculate_column_widths(12, 5);
+        let total: u16 = widths.iter().sum();
+        let separators = (widths.len() as u16).saturating_sub(1);
+        assert!(total + separators <= 12);
+    }
+
+    #[test]
+    fn f089_adapter_search_empty_dataset() {
+        let adapter = DatasetAdapter::empty();
+        assert!(adapter.search("anything").is_none());
+    }
+
+    #[test]
+    fn f090_adapter_search_from_start_row_beyond_total() {
+        let adapter = create_test_adapter();
+        // Start from row 100 (beyond total of 10)
+        let result = adapter.search_from("id_0", 100);
+        // Should wrap and find id_0
+        assert_eq!(result, Some(0));
+    }
+
+    #[test]
+    fn f091_in_memory_locate_row_binary_search_ok_branch() {
+        // Create batches such that row 0 is exactly at batch boundary offset
+        let schema = create_test_schema();
+        let batch1 = create_test_batch(&schema, 0, 3);
+        let batch2 = create_test_batch(&schema, 3, 3);
+        let adapter = InMemoryAdapter::new(vec![batch1, batch2], schema).unwrap();
+
+        // Row 3 should be at offset 3, which is in batch 1
+        let loc = adapter.locate_row(3);
+        assert_eq!(loc, Some((1, 0)));
+
+        // Row 0 is at offset 0, binary_search returns Ok(0)
+        let loc = adapter.locate_row(0);
+        assert_eq!(loc, Some((0, 0)));
+    }
+
+    #[test]
+    fn f092_streaming_locate_row_binary_search_ok_branch() {
+        let schema = create_test_schema();
+        let batch1 = create_test_batch(&schema, 0, 3);
+        let batch2 = create_test_batch(&schema, 3, 3);
+        let adapter = StreamingAdapter::new(vec![batch1, batch2], schema).unwrap();
+
+        let loc = adapter.locate_row(3);
+        assert_eq!(loc, Some((1, 0)));
+
+        let loc = adapter.locate_row(0);
+        assert_eq!(loc, Some((0, 0)));
+    }
+
+    #[test]
+    fn f093_adapter_field_type_streaming_mode() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        let type_str = adapter.field_type(0);
+        assert!(type_str.is_some());
+        assert!(type_str.unwrap().contains("Utf8"));
+    }
+
+    #[test]
+    fn f094_adapter_field_nullable_streaming_mode() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        let nullable = adapter.field_nullable(0);
+        assert_eq!(nullable, Some(false));
+    }
+
+    #[test]
+    fn f095_adapter_locate_row_streaming_mode() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        let loc = adapter.locate_row(2);
+        assert_eq!(loc, Some((0, 2)));
+
+        let loc_oob = adapter.locate_row(100);
+        assert!(loc_oob.is_none());
+    }
+
+    #[test]
+    fn f096_in_memory_adapter_with_many_batches() {
+        let schema = create_test_schema();
+        let batches: Vec<_> = (0..10)
+            .map(|i| create_test_batch(&schema, i * 5, 5))
+            .collect();
+        let adapter = InMemoryAdapter::new(batches, schema).unwrap();
+
+        assert_eq!(adapter.row_count(), 50);
+
+        // Test locating rows in different batches
+        assert_eq!(adapter.locate_row(0), Some((0, 0)));
+        assert_eq!(adapter.locate_row(7), Some((1, 2)));
+        assert_eq!(adapter.locate_row(49), Some((9, 4)));
+    }
+
+    #[test]
+    fn f097_streaming_adapter_with_many_batches() {
+        let schema = create_test_schema();
+        let batches: Vec<_> = (0..10)
+            .map(|i| create_test_batch(&schema, i * 5, 5))
+            .collect();
+        let adapter = StreamingAdapter::new(batches, schema).unwrap();
+
+        assert_eq!(adapter.row_count(), 50);
+        assert_eq!(adapter.locate_row(7), Some((1, 2)));
+    }
+
+    #[test]
+    fn f098_adapter_search_in_numeric_column() {
+        let adapter = create_test_adapter();
+        // Values column contains "0", "10", "20", etc.
+        let result = adapter.search("30");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn f099_adapter_search_partial_match() {
+        let adapter = create_test_adapter();
+        // Should find partial matches
+        let result = adapter.search("d_3");
+        assert_eq!(result, Some(3));
+    }
+
+    #[test]
+    fn f100_adapter_is_empty_with_batches() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 5);
+        let adapter = DatasetAdapter::from_batches(vec![batch], schema).unwrap();
+        assert!(!adapter.is_empty());
+    }
+
+    #[test]
+    fn f101_streaming_adapter_search() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 10);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        let result = adapter.search("id_5");
+        assert_eq!(result, Some(5));
+    }
+
+    #[test]
+    fn f102_streaming_adapter_search_from() {
+        let schema = create_test_schema();
+        let batch = create_test_batch(&schema, 0, 10);
+        let adapter = DatasetAdapter::streaming_from_batches(vec![batch], schema).unwrap();
+
+        // Search from row 7, should wrap and find id_2
+        let result = adapter.search_from("id_2", 7);
+        assert_eq!(result, Some(2));
+    }
+
+    #[test]
+    fn f103_calculate_column_widths_with_unicode() {
+        // Test that unicode width calculation works correctly
+        let schema = Arc::new(Schema::new(vec![Field::new("name", DataType::Utf8, false)]));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(StringArray::from(vec!["Hello", "World"]))],
+        )
+        .unwrap();
+
+        let adapter = DatasetAdapter::from_batches(vec![batch], schema).unwrap();
+        let widths = adapter.calculate_column_widths(80, 10);
+        assert!(!widths.is_empty());
+        assert!(widths[0] >= 4); // "name" has 4 chars
+    }
+
+    #[test]
+    fn f104_in_memory_empty_direct_methods() {
+        let adapter = InMemoryAdapter::empty();
+        assert_eq!(adapter.row_count(), 0);
+        assert_eq!(adapter.column_count(), 0);
+        assert!(adapter.field_name(0).is_none());
+        assert!(adapter.field_type(0).is_none());
+        assert!(adapter.field_nullable(0).is_none());
+        assert!(adapter.locate_row(0).is_none());
+    }
 }

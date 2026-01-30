@@ -607,4 +607,179 @@ mod tests {
         let result = load_dataset(&json_path);
         assert!(result.is_ok());
     }
+
+    // === Additional CLI basic tests ===
+
+    #[test]
+    fn test_cmd_head_zero_rows() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("test.parquet");
+        create_test_parquet(&path, 50);
+
+        // Request 0 rows - should still work
+        let result = cmd_head(&path, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_info_small_file() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("small.parquet");
+        create_test_parquet(&path, 5);
+
+        let result = cmd_info(&path);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_info_large_file() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("large.parquet");
+        create_test_parquet(&path, 1000);
+
+        let result = cmd_info(&path);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_schema_complex() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("complex.parquet");
+
+        // Create with more columns
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new("name", DataType::Utf8, true),
+            Field::new("value", DataType::Float64, true),
+        ]));
+
+        let batch = arrow::array::RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int32Array::from(vec![1, 2, 3])),
+                Arc::new(StringArray::from(vec!["a", "b", "c"])),
+                Arc::new(arrow::array::Float64Array::from(vec![1.0, 2.0, 3.0])),
+            ],
+        )
+        .unwrap();
+
+        let dataset = ArrowDataset::from_batch(batch).unwrap();
+        dataset.to_parquet(&path).unwrap();
+
+        let result = cmd_schema(&path);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_convert_csv_to_parquet() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let csv_path = temp_dir.path().join("input.csv");
+        let parquet_path = temp_dir.path().join("output.parquet");
+
+        std::fs::write(&csv_path, "id,name\n1,foo\n2,bar\n").unwrap();
+
+        let result = cmd_convert(&csv_path, &parquet_path);
+        assert!(result.is_ok());
+        assert!(parquet_path.exists());
+    }
+
+    #[test]
+    fn test_cmd_convert_json_to_parquet() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let json_path = temp_dir.path().join("input.json");
+        let parquet_path = temp_dir.path().join("output.parquet");
+
+        std::fs::write(
+            &json_path,
+            r#"{"id":1,"name":"foo"}
+{"id":2,"name":"bar"}"#,
+        )
+        .unwrap();
+
+        let result = cmd_convert(&json_path, &parquet_path);
+        assert!(result.is_ok());
+        assert!(parquet_path.exists());
+    }
+
+    #[test]
+    fn test_save_dataset_jsonl() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("output.jsonl");
+
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+        let batch = arrow::array::RecordBatch::try_new(
+            schema,
+            vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
+        )
+        .unwrap();
+        let dataset = ArrowDataset::from_batch(batch).unwrap();
+
+        let result = save_dataset(&dataset, &path);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_load_dataset_no_extension() {
+        let path = PathBuf::from("file_without_extension");
+        let result = load_dataset(&path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cmd_head_exact_rows() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("exact.parquet");
+        create_test_parquet(&path, 10);
+
+        // Request exact number of rows
+        let result = cmd_head(&path, 10);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_convert_parquet_to_parquet() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let input = temp_dir.path().join("input.parquet");
+        let output = temp_dir.path().join("output.parquet");
+        create_test_parquet(&input, 20);
+
+        let result = cmd_convert(&input, &output);
+        assert!(result.is_ok());
+
+        // Both should have same data
+        let original = ArrowDataset::from_parquet(&input).unwrap();
+        let converted = ArrowDataset::from_parquet(&output).unwrap();
+        assert_eq!(original.len(), converted.len());
+    }
+
+    #[test]
+    fn test_get_format_all_types() {
+        assert_eq!(get_format(Path::new("data.parquet")), "Parquet");
+        assert_eq!(get_format(Path::new("data.arrow")), "Arrow IPC");
+        assert_eq!(get_format(Path::new("data.ipc")), "Arrow IPC");
+        assert_eq!(get_format(Path::new("data.csv")), "CSV");
+        assert_eq!(get_format(Path::new("data.json")), "JSON");
+        assert_eq!(get_format(Path::new("data.jsonl")), "JSON");
+        assert_eq!(get_format(Path::new("data.txt")), "Unknown");
+        assert_eq!(get_format(Path::new("data.yaml")), "Unknown");
+        assert_eq!(get_format(Path::new("data")), "Unknown");
+    }
 }

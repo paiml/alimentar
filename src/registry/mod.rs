@@ -814,4 +814,817 @@ mod tests {
         // Rows should be from second publish
         assert_eq!(info.num_rows, 10);
     }
+
+    // === Additional coverage tests for registry ===
+
+    #[test]
+    fn test_registry_load_index_without_init() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+
+        // Trying to load without init should fail
+        let result = registry.load_index();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_registry_list_empty() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let list = registry.list();
+        assert!(list.is_ok());
+        assert!(list.ok().unwrap_or_else(|| panic!("list")).is_empty());
+    }
+
+    #[test]
+    fn test_registry_search_no_results() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset = create_test_dataset(5);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("my-dataset", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap_or_else(|| panic!("Should publish"));
+
+        let results = registry.search("nonexistent");
+        assert!(results.is_ok());
+        assert!(results.ok().unwrap_or_else(|| panic!("search")).is_empty());
+    }
+
+    #[test]
+    fn test_registry_search_case_insensitive() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset = create_test_dataset(5);
+        let metadata = DatasetMetadata {
+            description: "UPPERCASE DESCRIPTION".to_string(),
+            license: "MIT".to_string(),
+            tags: vec![],
+            source: None,
+            citation: None,
+            sha256: None,
+        };
+
+        registry
+            .publish("TestDataset", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap_or_else(|| panic!("Should publish"));
+
+        // Search lowercase
+        let results = registry.search("testdataset");
+        assert_eq!(results.ok().unwrap_or_else(|| panic!("search")).len(), 1);
+
+        // Search description lowercase
+        let results = registry.search("uppercase");
+        assert_eq!(results.ok().unwrap_or_else(|| panic!("search")).len(), 1);
+    }
+
+    #[test]
+    fn test_registry_search_tags_no_match() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset = create_test_dataset(5);
+        let metadata = DatasetMetadata {
+            description: "Test".to_string(),
+            license: "MIT".to_string(),
+            tags: vec!["ml".to_string(), "vision".to_string()],
+            source: None,
+            citation: None,
+            sha256: None,
+        };
+
+        registry
+            .publish("tagged-data", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap_or_else(|| panic!("Should publish"));
+
+        let results = registry.search_tags(&["audio", "nlp"]);
+        assert!(results.is_ok());
+        assert!(results.ok().unwrap_or_else(|| panic!("search")).is_empty());
+    }
+
+    #[test]
+    fn test_registry_search_tags_multiple_matches() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset = create_test_dataset(5);
+
+        let metadata1 = DatasetMetadata {
+            description: "Dataset 1".to_string(),
+            license: "MIT".to_string(),
+            tags: vec!["ml".to_string()],
+            source: None,
+            citation: None,
+            sha256: None,
+        };
+
+        let metadata2 = DatasetMetadata {
+            description: "Dataset 2".to_string(),
+            license: "MIT".to_string(),
+            tags: vec!["ml".to_string(), "vision".to_string()],
+            source: None,
+            citation: None,
+            sha256: None,
+        };
+
+        registry
+            .publish("data-a", "1.0.0", &dataset, metadata1)
+            .ok()
+            .unwrap_or_else(|| panic!("publish a"));
+        registry
+            .publish("data-b", "1.0.0", &dataset, metadata2)
+            .ok()
+            .unwrap_or_else(|| panic!("publish b"));
+
+        // Both have 'ml' tag
+        let results = registry.search_tags(&["ml"]);
+        assert_eq!(results.ok().unwrap_or_else(|| panic!("search")).len(), 2);
+    }
+
+    #[test]
+    fn test_registry_get_info_schema_contains_fields() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset = create_test_dataset(10);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("schema-test", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap_or_else(|| panic!("Should publish"));
+
+        let info = registry.get_info("schema-test");
+        assert!(info.is_ok());
+        let info = info.ok().unwrap_or_else(|| panic!("info"));
+
+        // Schema should be JSON with fields
+        assert!(info.schema.is_object());
+        let fields = info.schema.get("fields");
+        assert!(fields.is_some());
+    }
+
+    #[test]
+    fn test_registry_multiple_versions_ordering() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset = create_test_dataset(5);
+        let metadata = create_test_metadata();
+
+        // Publish in non-sequential order
+        registry
+            .publish("ordered", "2.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap_or_else(|| panic!("publish 2.0"));
+        registry
+            .publish("ordered", "1.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap_or_else(|| panic!("publish 1.0"));
+        registry
+            .publish("ordered", "3.0.0", &dataset, metadata)
+            .ok()
+            .unwrap_or_else(|| panic!("publish 3.0"));
+
+        let info = registry.get_info("ordered");
+        assert!(info.is_ok());
+        let info = info.ok().unwrap_or_else(|| panic!("info"));
+
+        // Latest should be the last published
+        assert_eq!(info.latest, "3.0.0");
+        assert_eq!(info.versions.len(), 3);
+    }
+
+    #[test]
+    fn test_registry_delete_middle_version() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset = create_test_dataset(5);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("three-versions", "1.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap_or_else(|| panic!("publish 1.0"));
+        registry
+            .publish("three-versions", "2.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap_or_else(|| panic!("publish 2.0"));
+        registry
+            .publish("three-versions", "3.0.0", &dataset, metadata)
+            .ok()
+            .unwrap_or_else(|| panic!("publish 3.0"));
+
+        // Delete middle version
+        registry
+            .delete("three-versions", "2.0.0")
+            .ok()
+            .unwrap_or_else(|| panic!("delete"));
+
+        let info = registry.get_info("three-versions");
+        assert!(info.is_ok());
+        let info = info.ok().unwrap_or_else(|| panic!("info"));
+
+        assert_eq!(info.versions.len(), 2);
+        assert!(!info.versions.contains(&"2.0.0".to_string()));
+        // Latest should still be 3.0.0
+        assert_eq!(info.latest, "3.0.0");
+    }
+
+    #[test]
+    fn test_registry_pull_specific_version() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset_v1 = create_test_dataset(5);
+        let dataset_v2 = create_test_dataset(15);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("versioned", "1.0.0", &dataset_v1, metadata.clone())
+            .ok()
+            .unwrap_or_else(|| panic!("publish v1"));
+        registry
+            .publish("versioned", "2.0.0", &dataset_v2, metadata)
+            .ok()
+            .unwrap_or_else(|| panic!("publish v2"));
+
+        // Pull specific version 1.0.0 (not latest)
+        let pulled = registry.pull("versioned", Some("1.0.0"));
+        assert!(pulled.is_ok());
+        let pulled = pulled.ok().unwrap_or_else(|| panic!("pulled"));
+        assert_eq!(pulled.len(), 5);
+    }
+
+    #[test]
+    fn test_registry_init_idempotent() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+
+        // Multiple inits should be safe
+        for _ in 0..5 {
+            let result = registry.init();
+            assert!(result.is_ok());
+        }
+
+        // Registry should still work
+        let list = registry.list();
+        assert!(list.is_ok());
+    }
+
+    #[test]
+    fn test_registry_metadata_preserved() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset = create_test_dataset(10);
+        let metadata = DatasetMetadata {
+            description: "Full metadata test".to_string(),
+            license: "Apache-2.0".to_string(),
+            tags: vec!["tag1".to_string(), "tag2".to_string(), "tag3".to_string()],
+            source: Some("http://example.com/source".to_string()),
+            citation: Some("Citation text here".to_string()),
+            sha256: Some("abc123".to_string()),
+        };
+
+        registry
+            .publish("metadata-test", "1.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap_or_else(|| panic!("publish"));
+
+        let info = registry.get_info("metadata-test");
+        assert!(info.is_ok());
+        let info = info.ok().unwrap_or_else(|| panic!("info"));
+
+        assert_eq!(info.metadata.description, metadata.description);
+        assert_eq!(info.metadata.license, metadata.license);
+        assert_eq!(info.metadata.tags, metadata.tags);
+        assert_eq!(info.metadata.source, metadata.source);
+        assert_eq!(info.metadata.citation, metadata.citation);
+        assert_eq!(info.metadata.sha256, metadata.sha256);
+    }
+
+    #[test]
+    fn test_registry_size_bytes_updated() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset = create_test_dataset(100);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("size-test", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap_or_else(|| panic!("publish"));
+
+        let info = registry.get_info("size-test");
+        assert!(info.is_ok());
+        let info = info.ok().unwrap_or_else(|| panic!("info"));
+
+        // Size should be > 0 for a dataset with data
+        assert!(info.size_bytes > 0);
+    }
+
+    #[test]
+    fn test_schema_to_json_function() {
+        let dataset = create_test_dataset(5);
+        let schema = dataset.schema();
+        let json = schema_to_json(&schema);
+
+        assert!(json.is_object());
+        let fields = json.get("fields").and_then(|f| f.as_array());
+        assert!(fields.is_some());
+
+        let fields = fields.unwrap_or_else(|| panic!("fields"));
+        assert_eq!(fields.len(), 2); // id and name
+
+        // Check first field
+        let first = &fields[0];
+        assert_eq!(
+            first
+                .get("name")
+                .and_then(|n: &serde_json::Value| n.as_str()),
+            Some("id")
+        );
+        assert!(first.get("data_type").is_some());
+        assert!(first.get("nullable").is_some());
+    }
+
+    #[test]
+    fn test_registry_concurrent_publish_different_datasets() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry
+            .init()
+            .ok()
+            .unwrap_or_else(|| panic!("Should init"));
+
+        let dataset = create_test_dataset(5);
+        let metadata = create_test_metadata();
+
+        // Publish multiple different datasets
+        for i in 0..5 {
+            registry
+                .publish(
+                    &format!("dataset-{}", i),
+                    "1.0.0",
+                    &dataset,
+                    metadata.clone(),
+                )
+                .ok()
+                .unwrap_or_else(|| panic!("publish"));
+        }
+
+        let list = registry.list();
+        assert!(list.is_ok());
+        assert_eq!(list.ok().unwrap_or_else(|| panic!("list")).len(), 5);
+    }
+
+    // === Additional registry tests for coverage ===
+
+    #[test]
+    fn test_registry_search_partial_name_match() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset = create_test_dataset(5);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("machine-learning-data", "1.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap();
+        registry
+            .publish("deep-learning-data", "1.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap();
+        registry
+            .publish("statistics-data", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap();
+
+        // Search by partial name
+        let results = registry.search("learning").ok().unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_registry_search_by_description() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset = create_test_dataset(5);
+
+        let metadata1 = DatasetMetadata {
+            description: "Image classification dataset".to_string(),
+            license: "MIT".to_string(),
+            tags: vec![],
+            source: None,
+            citation: None,
+            sha256: None,
+        };
+
+        let metadata2 = DatasetMetadata {
+            description: "Text sentiment analysis".to_string(),
+            license: "MIT".to_string(),
+            tags: vec![],
+            source: None,
+            citation: None,
+            sha256: None,
+        };
+
+        registry
+            .publish("images", "1.0.0", &dataset, metadata1)
+            .ok()
+            .unwrap();
+        registry
+            .publish("text", "1.0.0", &dataset, metadata2)
+            .ok()
+            .unwrap();
+
+        // Search by description content
+        let image_results = registry.search("classification").ok().unwrap();
+        assert_eq!(image_results.len(), 1);
+        assert_eq!(image_results[0].name, "images");
+
+        let text_results = registry.search("sentiment").ok().unwrap();
+        assert_eq!(text_results.len(), 1);
+        assert_eq!(text_results[0].name, "text");
+    }
+
+    #[test]
+    fn test_registry_search_tags_multiple_tags() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset = create_test_dataset(5);
+
+        let metadata = DatasetMetadata {
+            description: "Multi-tag dataset".to_string(),
+            license: "MIT".to_string(),
+            tags: vec!["tag1".to_string(), "tag2".to_string(), "tag3".to_string()],
+            source: None,
+            citation: None,
+            sha256: None,
+        };
+
+        registry
+            .publish("tagged", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap();
+
+        // Any of the tags should match
+        assert_eq!(registry.search_tags(&["tag1"]).ok().unwrap().len(), 1);
+        assert_eq!(registry.search_tags(&["tag2"]).ok().unwrap().len(), 1);
+        assert_eq!(registry.search_tags(&["tag3"]).ok().unwrap().len(), 1);
+        assert_eq!(
+            registry.search_tags(&["tag1", "tag2"]).ok().unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_registry_delete_first_of_multiple_versions() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset = create_test_dataset(5);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("versioned", "1.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap();
+        registry
+            .publish("versioned", "2.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap();
+        registry
+            .publish("versioned", "3.0.0", &dataset, metadata)
+            .ok()
+            .unwrap();
+
+        // Delete first version
+        registry.delete("versioned", "1.0.0").ok().unwrap();
+
+        let info = registry.get_info("versioned").ok().unwrap();
+        assert_eq!(info.versions.len(), 2);
+        assert!(!info.versions.contains(&"1.0.0".to_string()));
+        // Latest should still be 3.0.0
+        assert_eq!(info.latest, "3.0.0");
+    }
+
+    #[test]
+    fn test_registry_publish_without_init() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        // Don't call init()
+
+        let dataset = create_test_dataset(5);
+        let metadata = create_test_metadata();
+
+        // Should still work because publish calls init internally via load_index
+        let result = registry.publish("no-init", "1.0.0", &dataset, metadata);
+        // This might fail or succeed depending on implementation
+        // The current implementation creates index on first publish
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_registry_get_info_contains_schema() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset = create_test_dataset(10);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("schema-check", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap();
+
+        let info = registry.get_info("schema-check").ok().unwrap();
+
+        // Schema should be a JSON object with fields
+        assert!(info.schema.is_object());
+        let fields = info.schema.get("fields").and_then(|f| f.as_array());
+        assert!(fields.is_some());
+        assert_eq!(fields.unwrap().len(), 2); // id and name
+    }
+
+    #[test]
+    fn test_registry_delete_all_versions_removes_dataset() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset = create_test_dataset(5);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("temp", "1.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap();
+        registry
+            .publish("temp", "2.0.0", &dataset, metadata)
+            .ok()
+            .unwrap();
+
+        // Delete all versions
+        registry.delete("temp", "1.0.0").ok().unwrap();
+        registry.delete("temp", "2.0.0").ok().unwrap();
+
+        // Dataset should no longer exist
+        let result = registry.get_info("temp");
+        assert!(result.is_err());
+
+        // List should be empty
+        let list = registry.list().ok().unwrap();
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn test_registry_pull_uses_latest_when_none() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset_v1 = create_test_dataset(10);
+        let dataset_v2 = create_test_dataset(20);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("latest-test", "1.0.0", &dataset_v1, metadata.clone())
+            .ok()
+            .unwrap();
+        registry
+            .publish("latest-test", "2.0.0", &dataset_v2, metadata)
+            .ok()
+            .unwrap();
+
+        // Pull without specifying version
+        let pulled = registry.pull("latest-test", None).ok().unwrap();
+        assert_eq!(pulled.len(), 20); // Should be v2 (20 rows)
+    }
+
+    #[test]
+    fn test_registry_with_custom_index_path() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::with_index_path(Box::new(backend), "my-custom-index.json");
+
+        registry.init().ok().unwrap();
+
+        let dataset = create_test_dataset(5);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("custom-path", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap();
+
+        // Should be able to list
+        let list = registry.list().ok().unwrap();
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn test_registry_metadata_all_fields() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset = create_test_dataset(5);
+
+        let metadata = DatasetMetadata {
+            description: "Full metadata test".to_string(),
+            license: "Apache-2.0".to_string(),
+            tags: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            source: Some("https://example.com/source".to_string()),
+            citation: Some("Cite this dataset".to_string()),
+            sha256: Some("abc123def456".to_string()),
+        };
+
+        registry
+            .publish("full-meta", "1.0.0", &dataset, metadata.clone())
+            .ok()
+            .unwrap();
+
+        let info = registry.get_info("full-meta").ok().unwrap();
+        assert_eq!(info.metadata.description, "Full metadata test");
+        assert_eq!(info.metadata.license, "Apache-2.0");
+        assert_eq!(info.metadata.tags.len(), 3);
+        assert_eq!(
+            info.metadata.source,
+            Some("https://example.com/source".to_string())
+        );
+        assert_eq!(
+            info.metadata.citation,
+            Some("Cite this dataset".to_string())
+        );
+    }
+
+    #[test]
+    fn test_registry_republish_same_version() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset1 = create_test_dataset(10);
+        let dataset2 = create_test_dataset(20);
+        let metadata = create_test_metadata();
+
+        // First publish
+        registry
+            .publish("republish", "1.0.0", &dataset1, metadata.clone())
+            .ok()
+            .unwrap();
+
+        let info1 = registry.get_info("republish").ok().unwrap();
+        assert_eq!(info1.num_rows, 10);
+
+        // Republish same version with different data
+        registry
+            .publish("republish", "1.0.0", &dataset2, metadata)
+            .ok()
+            .unwrap();
+
+        let info2 = registry.get_info("republish").ok().unwrap();
+        assert_eq!(info2.num_rows, 20);
+        // Should only have 1 version, not 2
+        assert_eq!(info2.versions.len(), 1);
+    }
+
+    #[test]
+    fn test_registry_search_empty_string() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset = create_test_dataset(5);
+        let metadata = create_test_metadata();
+
+        registry
+            .publish("test-data", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap();
+
+        // Empty search should match everything (contains "")
+        let results = registry.search("").ok().unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_registry_search_tags_empty_array() {
+        let backend = MemoryBackend::new();
+        let registry = Registry::new(Box::new(backend));
+        registry.init().ok().unwrap();
+
+        let dataset = create_test_dataset(5);
+        let metadata = DatasetMetadata {
+            description: "Test".to_string(),
+            license: "MIT".to_string(),
+            tags: vec!["ml".to_string()],
+            source: None,
+            citation: None,
+            sha256: None,
+        };
+
+        registry
+            .publish("tagged-ds", "1.0.0", &dataset, metadata)
+            .ok()
+            .unwrap();
+
+        // Empty tag array should return empty results
+        let results = registry.search_tags(&[]).ok().unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_schema_to_json_with_nullable_fields() {
+        // Create schema with nullable and non-nullable fields
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("required_id", DataType::Int32, false),
+            Field::new("optional_name", DataType::Utf8, true),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int32Array::from(vec![1, 2, 3])),
+                Arc::new(StringArray::from(vec!["a", "b", "c"])),
+            ],
+        )
+        .unwrap();
+
+        let dataset = ArrowDataset::from_batch(batch).unwrap();
+
+        let json = schema_to_json(&dataset.schema());
+        let fields = json.get("fields").and_then(|f| f.as_array()).unwrap();
+
+        assert_eq!(fields.len(), 2);
+
+        // Check nullable values
+        let field0_nullable = fields[0].get("nullable").and_then(|v| v.as_bool());
+        let field1_nullable = fields[1].get("nullable").and_then(|v| v.as_bool());
+
+        assert_eq!(field0_nullable, Some(false));
+        assert_eq!(field1_nullable, Some(true));
+    }
 }

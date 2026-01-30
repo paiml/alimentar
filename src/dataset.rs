@@ -1323,4 +1323,385 @@ mod tests {
         let debug_str = format!("{:?}", options);
         assert!(debug_str.contains("JsonOptions"));
     }
+
+    // === Additional coverage tests ===
+
+    #[test]
+    fn test_from_parquet_bytes_and_to_parquet_bytes() {
+        let batch = create_test_batch(0, 10);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let bytes = dataset
+            .to_parquet_bytes()
+            .ok()
+            .unwrap_or_else(|| panic!("Should convert to bytes"));
+
+        let loaded = ArrowDataset::from_parquet_bytes(&bytes)
+            .ok()
+            .unwrap_or_else(|| panic!("Should load from bytes"));
+
+        assert_eq!(loaded.len(), 10);
+        assert_eq!(loaded.schema(), dataset.schema());
+    }
+
+    #[test]
+    fn test_from_csv_str() {
+        let csv = "id,name\n1,Alice\n2,Bob\n3,Charlie";
+        let dataset = ArrowDataset::from_csv_str(csv)
+            .ok()
+            .unwrap_or_else(|| panic!("Should parse CSV string"));
+
+        assert_eq!(dataset.len(), 3);
+        assert_eq!(dataset.schema().fields().len(), 2);
+    }
+
+    #[test]
+    fn test_from_json_str() {
+        let json = r#"{"id": 1, "name": "Alice"}
+{"id": 2, "name": "Bob"}
+{"id": 3, "name": "Charlie"}"#;
+        let dataset = ArrowDataset::from_json_str(json)
+            .ok()
+            .unwrap_or_else(|| panic!("Should parse JSON string"));
+
+        assert_eq!(dataset.len(), 3);
+    }
+
+    #[test]
+    fn test_csv_with_options_custom_delimiter() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("test.tsv");
+
+        // Write TSV file
+        std::fs::write(&path, "id\tname\n1\tAlice\n2\tBob\n3\tCharlie")
+            .ok()
+            .unwrap_or_else(|| panic!("Should write TSV"));
+
+        let options = CsvOptions::new().with_delimiter(b'\t');
+        let dataset = ArrowDataset::from_csv_with_options(&path, options)
+            .ok()
+            .unwrap_or_else(|| panic!("Should load TSV"));
+
+        assert_eq!(dataset.len(), 3);
+    }
+
+    #[test]
+    fn test_csv_without_header() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("no_header.csv");
+
+        // Write CSV without header
+        std::fs::write(&path, "1,Alice\n2,Bob\n3,Charlie")
+            .ok()
+            .unwrap_or_else(|| panic!("Should write CSV"));
+
+        let options = CsvOptions::new().with_header(false);
+        let dataset = ArrowDataset::from_csv_with_options(&path, options)
+            .ok()
+            .unwrap_or_else(|| panic!("Should load CSV"));
+
+        assert_eq!(dataset.len(), 3);
+    }
+
+    #[test]
+    fn test_json_with_options_batch_size() {
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("test.jsonl");
+
+        let json = r#"{"id": 1, "name": "Alice"}
+{"id": 2, "name": "Bob"}
+{"id": 3, "name": "Charlie"}"#;
+        std::fs::write(&path, json)
+            .ok()
+            .unwrap_or_else(|| panic!("Should write JSON"));
+
+        let options = JsonOptions::new().with_batch_size(1024);
+        let dataset = ArrowDataset::from_json_with_options(&path, options)
+            .ok()
+            .unwrap_or_else(|| panic!("Should load JSON"));
+
+        assert_eq!(dataset.len(), 3);
+    }
+
+    #[test]
+    fn test_row_iterator_multiple_batches_size_hint() {
+        let batch1 = create_test_batch(0, 5);
+        let batch2 = create_test_batch(5, 3);
+        let batch3 = create_test_batch(8, 2);
+
+        let dataset = ArrowDataset::new(vec![batch1, batch2, batch3])
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let mut iter = dataset.rows();
+        assert_eq!(iter.size_hint(), (10, Some(10)));
+
+        // Consume some elements
+        iter.next();
+        iter.next();
+        assert_eq!(iter.size_hint(), (8, Some(8)));
+
+        // Consume more to cross batch boundary
+        for _ in 0..3 {
+            iter.next();
+        }
+        assert_eq!(iter.size_hint(), (5, Some(5)));
+    }
+
+    #[test]
+    fn test_find_row_boundary_conditions() {
+        let batch1 = create_test_batch(0, 3);
+        let batch2 = create_test_batch(3, 2);
+
+        let dataset = ArrowDataset::new(vec![batch1, batch2])
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        // First row of first batch
+        let row0 = dataset.get(0);
+        assert!(row0.is_some());
+
+        // Last row of first batch
+        let row2 = dataset.get(2);
+        assert!(row2.is_some());
+
+        // First row of second batch
+        let row3 = dataset.get(3);
+        assert!(row3.is_some());
+
+        // Last row of second batch
+        let row4 = dataset.get(4);
+        assert!(row4.is_some());
+
+        // Out of bounds
+        let row5 = dataset.get(5);
+        assert!(row5.is_none());
+    }
+
+    #[test]
+    fn test_empty_csv_str_error() {
+        // Empty CSV should error
+        let result = ArrowDataset::from_csv_str("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_empty_json_str_error() {
+        // Empty JSON should error
+        let result = ArrowDataset::from_json_str("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dataset_trait_is_empty_for_nonempty() {
+        let batch = create_test_batch(0, 1);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        assert!(!<ArrowDataset as Dataset>::is_empty(&dataset));
+    }
+
+    #[test]
+    fn test_rows_exact_size_iterator_len_exhaustion() {
+        let batch = create_test_batch(0, 3);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let mut iter = dataset.rows();
+        assert_eq!(iter.len(), 3);
+
+        iter.next();
+        assert_eq!(iter.len(), 2);
+
+        iter.next();
+        assert_eq!(iter.len(), 1);
+
+        iter.next();
+        assert_eq!(iter.len(), 0);
+
+        // Exhausted
+        assert!(iter.next().is_none());
+        assert_eq!(iter.len(), 0);
+    }
+
+    #[test]
+    fn test_csv_options_clone() {
+        let options = CsvOptions::new()
+            .with_header(false)
+            .with_delimiter(b';')
+            .with_batch_size(512);
+        let cloned = options.clone();
+
+        assert_eq!(cloned.has_header, options.has_header);
+        assert_eq!(cloned.delimiter, options.delimiter);
+        assert_eq!(cloned.batch_size, options.batch_size);
+    }
+
+    #[test]
+    fn test_json_options_clone() {
+        let options = JsonOptions::new().with_batch_size(256);
+        let cloned = options.clone();
+
+        assert_eq!(cloned.batch_size, options.batch_size);
+    }
+
+    #[test]
+    fn test_iter_returns_cloned_batches() {
+        let batch = create_test_batch(0, 5);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let mut iter = dataset.iter();
+        let first = iter.next();
+        assert!(first.is_some());
+
+        // Original dataset should still be usable
+        assert_eq!(dataset.len(), 5);
+    }
+
+    #[test]
+    fn test_row_iterator_empty_batch_handling() {
+        // Create batches where one might be empty-ish
+        let batch1 = create_test_batch(0, 2);
+        let batch2 = create_test_batch(2, 1);
+
+        let dataset = ArrowDataset::new(vec![batch1, batch2])
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let rows: Vec<_> = dataset.rows().collect();
+        assert_eq!(rows.len(), 3);
+    }
+
+    #[test]
+    fn test_large_batch_count() {
+        let batches: Vec<RecordBatch> = (0..20).map(|i| create_test_batch(i * 2, 2)).collect();
+
+        let dataset = ArrowDataset::new(batches)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        assert_eq!(dataset.len(), 40);
+        assert_eq!(dataset.num_batches(), 20);
+
+        // Access row from last batch
+        let row = dataset.get(39);
+        assert!(row.is_some());
+    }
+
+    #[test]
+    fn test_csv_write_and_verify_content() {
+        let batch = create_test_batch(0, 3);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("verify.csv");
+
+        dataset
+            .to_csv(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should write CSV"));
+
+        // Read back and verify
+        let content = std::fs::read_to_string(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should read file"));
+        assert!(content.contains("id"));
+        assert!(content.contains("name"));
+    }
+
+    #[test]
+    fn test_json_write_and_verify_content() {
+        let batch = create_test_batch(0, 2);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let temp_dir = tempfile::tempdir()
+            .ok()
+            .unwrap_or_else(|| panic!("Should create temp dir"));
+        let path = temp_dir.path().join("verify.jsonl");
+
+        dataset
+            .to_json(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should write JSON"));
+
+        // Read back and verify
+        let content = std::fs::read_to_string(&path)
+            .ok()
+            .unwrap_or_else(|| panic!("Should read file"));
+        assert!(content.contains("\"id\""));
+        assert!(content.contains("\"name\""));
+    }
+
+    #[test]
+    fn test_to_ipc_error_invalid_path() {
+        let batch = create_test_batch(0, 5);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let result = dataset.to_ipc("/nonexistent/path/output.arrow");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_to_ipc_stream_error_invalid_path() {
+        let batch = create_test_batch(0, 5);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let result = dataset.to_ipc_stream("/nonexistent/path/output.arrows");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_to_parquet_error_invalid_path() {
+        let batch = create_test_batch(0, 5);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let result = dataset.to_parquet("/nonexistent/path/output.parquet");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_to_csv_error_invalid_path() {
+        let batch = create_test_batch(0, 5);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let result = dataset.to_csv("/nonexistent/path/output.csv");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_to_json_error_invalid_path() {
+        let batch = create_test_batch(0, 5);
+        let dataset = ArrowDataset::from_batch(batch)
+            .ok()
+            .unwrap_or_else(|| panic!("Should create dataset"));
+
+        let result = dataset.to_json("/nonexistent/path/output.jsonl");
+        assert!(result.is_err());
+    }
 }
