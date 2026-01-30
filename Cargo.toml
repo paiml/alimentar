@@ -11,7 +11,7 @@ categories = ["data-structures", "science"]
 rust-version = "1.75"
 
 [features]
-default = ["local", "tokio-runtime", "cli", "mmap", "shuffle", "provenance"]
+default = ["local", "tokio-runtime", "cli", "repl", "mmap", "shuffle", "provenance"]
 local = []
 mmap = ["dep:memmap2"]
 shuffle = ["dep:rand"]
