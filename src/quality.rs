@@ -1030,7 +1030,10 @@ impl QualityChecker {
         &self,
         dataset: &ArrowDataset,
     ) -> (HashMap<String, Vec<Option<String>>>, usize) {
-        use arrow::array::{Array, Float64Array, Int32Array, Int64Array, StringArray};
+        use arrow::array::{
+            Array, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, ListArray,
+            StringArray, StructArray,
+        };
 
         let schema = dataset.schema();
         let mut data: HashMap<String, Vec<Option<String>>> = HashMap::new();
@@ -1058,6 +1061,18 @@ impl QualityChecker {
                             col_data.push(Some(arr.value(i).to_string()));
                         } else if let Some(arr) = array.as_any().downcast_ref::<Float64Array>() {
                             col_data.push(Some(arr.value(i).to_string()));
+                        } else if let Some(arr) = array.as_any().downcast_ref::<Float32Array>() {
+                            // GH-013: Support Float32
+                            col_data.push(Some(arr.value(i).to_string()));
+                        } else if let Some(arr) = array.as_any().downcast_ref::<BooleanArray>() {
+                            // GH-013: Support Boolean
+                            col_data.push(Some(arr.value(i).to_string()));
+                        } else if let Some(arr) = array.as_any().downcast_ref::<ListArray>() {
+                            // GH-013: Serialize list to comparable string representation
+                            col_data.push(Some(Self::serialize_list_value(arr, i)));
+                        } else if let Some(arr) = array.as_any().downcast_ref::<StructArray>() {
+                            // GH-013: Serialize struct to comparable string representation
+                            col_data.push(Some(Self::serialize_struct_value(arr, i)));
                         } else {
                             col_data.push(Some("?".to_string()));
                         }
@@ -1067,6 +1082,76 @@ impl QualityChecker {
         }
 
         (data, row_count)
+    }
+
+    /// Serialize a list value at index to a comparable string (GH-013)
+    fn serialize_list_value(arr: &arrow::array::ListArray, idx: usize) -> String {
+        use arrow::array::Array;
+
+        let values = arr.value(idx);
+        let mut parts = Vec::new();
+
+        for i in 0..values.len() {
+            if values.is_null(i) {
+                parts.push("null".to_string());
+            } else {
+                // Recursively serialize the element
+                parts.push(Self::serialize_array_value(&values, i));
+            }
+        }
+
+        format!("[{}]", parts.join(","))
+    }
+
+    /// Serialize a struct value at index to a comparable string (GH-013)
+    fn serialize_struct_value(arr: &arrow::array::StructArray, idx: usize) -> String {
+        use arrow::array::Array;
+
+        let mut parts = Vec::new();
+
+        for (field_idx, field) in arr.fields().iter().enumerate() {
+            let col = arr.column(field_idx);
+            let value = if col.is_null(idx) {
+                "null".to_string()
+            } else {
+                Self::serialize_array_value(col, idx)
+            };
+            parts.push(format!("{}:{}", field.name(), value));
+        }
+
+        format!("{{{}}}", parts.join(","))
+    }
+
+    /// Serialize any array value at index to a string (GH-013)
+    fn serialize_array_value(arr: &dyn arrow::array::Array, idx: usize) -> String {
+        use arrow::array::{
+            BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, ListArray,
+            StringArray, StructArray,
+        };
+
+        if arr.is_null(idx) {
+            return "null".to_string();
+        }
+
+        if let Some(a) = arr.as_any().downcast_ref::<StringArray>() {
+            format!("\"{}\"", a.value(idx))
+        } else if let Some(a) = arr.as_any().downcast_ref::<Int32Array>() {
+            a.value(idx).to_string()
+        } else if let Some(a) = arr.as_any().downcast_ref::<Int64Array>() {
+            a.value(idx).to_string()
+        } else if let Some(a) = arr.as_any().downcast_ref::<Float64Array>() {
+            a.value(idx).to_string()
+        } else if let Some(a) = arr.as_any().downcast_ref::<Float32Array>() {
+            a.value(idx).to_string()
+        } else if let Some(a) = arr.as_any().downcast_ref::<BooleanArray>() {
+            a.value(idx).to_string()
+        } else if let Some(a) = arr.as_any().downcast_ref::<ListArray>() {
+            Self::serialize_list_value(a, idx)
+        } else if let Some(a) = arr.as_any().downcast_ref::<StructArray>() {
+            Self::serialize_struct_value(a, idx)
+        } else {
+            "?".to_string()
+        }
     }
 
     /// Analyze a single column
@@ -2003,5 +2088,163 @@ mod tests {
         let debug = format!("{:?}", profile);
         assert!(debug.contains("QualityProfile"));
         assert!(debug.contains("default"));
+    }
+
+    // ========== GH-013: Nested Arrow Types Support ==========
+
+    /// Helper to create a dataset with List<Struct> columns (like doctest corpus)
+    fn make_nested_dataset() -> ArrowDataset {
+        use arrow::array::{ArrayRef, ListArray, StructArray};
+        use arrow::buffer::OffsetBuffer;
+
+        // Schema with nested types
+        let func_struct = DataType::Struct(
+            vec![
+                Field::new("name", DataType::Utf8, false),
+                Field::new("line", DataType::Int32, false),
+            ]
+            .into(),
+        );
+        let func_list = DataType::List(Arc::new(Field::new("element", func_struct, true)));
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("module", DataType::Utf8, false),
+            Field::new("functions", func_list, true),
+            Field::new("coverage", DataType::Float32, false),
+        ]));
+
+        // Build the values array for the list (all function structs combined)
+        let all_names = StringArray::from(vec!["foo", "bar", "baz", "qux", "quux"]);
+        let all_lines = Int32Array::from(vec![10, 20, 30, 40, 50]);
+        let all_structs = StructArray::try_new(
+            vec![
+                Field::new("name", DataType::Utf8, false),
+                Field::new("line", DataType::Int32, false),
+            ]
+            .into(),
+            vec![
+                Arc::new(all_names) as ArrayRef,
+                Arc::new(all_lines) as ArrayRef,
+            ],
+            None,
+        )
+        .expect("all_structs");
+
+        // Create list array with offsets [0, 2, 3, 5] for 3 rows
+        let offsets = OffsetBuffer::new(vec![0i32, 2, 3, 5].into());
+        let list_field = Arc::new(Field::new(
+            "element",
+            DataType::Struct(
+                vec![
+                    Field::new("name", DataType::Utf8, false),
+                    Field::new("line", DataType::Int32, false),
+                ]
+                .into(),
+            ),
+            true,
+        ));
+        let functions_array =
+            ListArray::try_new(list_field, offsets, Arc::new(all_structs), None).expect("list");
+
+        let modules = StringArray::from(vec!["mod_a.py", "mod_b.py", "mod_c.py"]);
+        let coverages = arrow::array::Float32Array::from(vec![95.0f32, 98.5, 100.0]);
+
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(modules),
+                Arc::new(functions_array),
+                Arc::new(coverages),
+            ],
+        )
+        .expect("batch");
+
+        ArrowDataset::from_batch(batch).expect("dataset")
+    }
+
+    #[test]
+    fn test_gh013_nested_types_not_constant() {
+        // GH-013: List<Struct> columns should NOT be flagged as constant
+        // when they contain different values
+        let dataset = make_nested_dataset();
+
+        let checker = QualityChecker::new();
+        let report = checker.check(&dataset).expect("check");
+
+        // The functions column has 3 different list values, should NOT be constant
+        let functions_col = report.columns.get("functions").expect("functions column");
+
+        // Before fix: unique_count would be 1 (all "?")
+        // After fix: unique_count should be 3 (different lists)
+        assert!(
+            functions_col.unique_count > 1,
+            "List<Struct> column should have >1 unique values, got {}",
+            functions_col.unique_count
+        );
+        assert!(
+            !functions_col.is_constant(),
+            "List<Struct> column should not be flagged as constant"
+        );
+
+        // Verify no ConstantColumn issue for functions
+        let constant_issues: Vec<_> = report
+            .issues
+            .iter()
+            .filter(|i| matches!(i, QualityIssue::ConstantColumn { column, .. } if column == "functions"))
+            .collect();
+        assert!(
+            constant_issues.is_empty(),
+            "functions column should not have ConstantColumn issue"
+        );
+    }
+
+    #[test]
+    fn test_gh013_float32_supported() {
+        // Float32 columns should be properly analyzed
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "score",
+            DataType::Float32,
+            false,
+        )]));
+
+        let scores = arrow::array::Float32Array::from(vec![0.5f32, 0.75, 0.9, 0.85]);
+
+        let batch =
+            RecordBatch::try_new(Arc::clone(&schema), vec![Arc::new(scores)]).expect("batch");
+
+        let dataset = ArrowDataset::from_batch(batch).expect("dataset");
+        let checker = QualityChecker::new();
+        let report = checker.check(&dataset).expect("check");
+
+        let score_col = report.columns.get("score").expect("score column");
+
+        // Should have 4 unique values, not be constant
+        assert_eq!(score_col.unique_count, 4);
+        assert!(!score_col.is_constant());
+    }
+
+    #[test]
+    fn test_gh013_boolean_supported() {
+        // Boolean columns should be properly analyzed
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "flag",
+            DataType::Boolean,
+            false,
+        )]));
+
+        let flags = arrow::array::BooleanArray::from(vec![true, false, true, false]);
+
+        let batch =
+            RecordBatch::try_new(Arc::clone(&schema), vec![Arc::new(flags)]).expect("batch");
+
+        let dataset = ArrowDataset::from_batch(batch).expect("dataset");
+        let checker = QualityChecker::new();
+        let report = checker.check(&dataset).expect("check");
+
+        let flag_col = report.columns.get("flag").expect("flag column");
+
+        // Should have 2 unique values (true, false)
+        assert_eq!(flag_col.unique_count, 2);
+        assert!(!flag_col.is_constant());
     }
 }
