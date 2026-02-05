@@ -13,6 +13,37 @@ alimentar ("to feed" in Spanish) is a pure Rust data loading, transformation, an
 3. **Zero-copy** - Arrow RecordBatch throughout
 4. **Ecosystem aligned** - Arrow 53, Parquet 53 (matches trueno-db, trueno-graph)
 
+## Code Search (pmat query)
+
+**NEVER use grep or rg for code discovery.** Use `pmat query` instead -- it returns quality-annotated, ranked results with TDG scores and fault annotations.
+
+```bash
+# Find functions by intent
+pmat query "parquet reader" --limit 10
+
+# Find high-quality code
+pmat query "arrow conversion" --min-grade A --exclude-tests
+
+# Find with fault annotations (unwrap, panic, unsafe, etc.)
+pmat query "data loading" --faults
+
+# Filter by complexity
+pmat query "schema validation" --max-complexity 10
+
+# Cross-project search
+pmat query "tensor conversion" --include-project ../trueno
+
+# Git history search (find code by commit intent via RRF fusion)
+pmat query "fix column reader" -G
+pmat query "deserialize" --git-history
+
+# Enrichment flags (combine freely)
+pmat query "deserialize" --churn              # git volatility (commit count, churn score)
+pmat query "schema" --duplicates           # code clone detection (MinHash+LSH)
+pmat query "data pipeline" --entropy           # pattern diversity (repetitive vs unique)
+pmat query "parquet loading" --churn --duplicates --entropy --faults -G  # full audit
+```
+
 ## Build Commands
 
 ```bash

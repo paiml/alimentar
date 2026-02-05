@@ -30,3 +30,10 @@ lcov.info
 # QA Test Fixtures (generated)
 test_fixtures/
 lcov_temp.info
+
+# PMAT
+.pmat/backup/
+.pmat-qa/
+.pmat/context.idx/
+.pmat/workspace.idx/
+.pmat/deps-cache.json
