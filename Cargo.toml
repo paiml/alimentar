@@ -168,3 +168,8 @@ rustdoc-args = ["--generate-link-to-definition"]
 
 [package.metadata.release]
 shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
