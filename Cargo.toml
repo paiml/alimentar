@@ -130,8 +130,7 @@ unsafe_code = "deny"
 # Enable additional high-value lints
 unsafe_op_in_unsafe_fn = "warn"
 missing_docs = "warn"
-unreachable_pub = "warn"
-rust_2018_idioms = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
 
 [workspace.lints.clippy]
 # Correctness (critical)
@@ -152,7 +151,7 @@ unreachable = "warn"
 # Additional high-value lints
 checked_conversions = "warn"
 fallible_impl_from = "warn"
-# Development-phase allows (too noisy)
+# Development-phase allows (too noisy for current codebase)
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
