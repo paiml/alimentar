@@ -31,7 +31,7 @@ doctest = ["dep:chrono", "dep:regex", "dep:walkdir"]
 [dependencies]
 # Core (always)
 # NOTE: arrow 57+ fixes comfy-table let_chains compatibility
-arrow = { version = "57", default-features = false, features = ["prettyprint", "ipc"] }
+arrow = { version = "58", default-features = false, features = ["prettyprint", "ipc"] }
 arrow-csv = { version = "57" }
 arrow-json = { version = "57" }
 parquet = { version = "57", default-features = false, features = ["arrow", "snap", "zstd"] }
