@@ -225,6 +225,11 @@ If you use alimentar in your research, please cite:
 
 Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) guide for details.
 
+
+## MSRV
+
+Minimum Supported Rust Version: **1.75**
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
