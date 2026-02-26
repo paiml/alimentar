@@ -124,21 +124,35 @@ lto = true
 codegen-units = 1
 strip = true
 
-[lints.rust]
+[workspace.lints.rust]
 # Use deny instead of forbid to allow override in mmap module
 unsafe_code = "deny"
 # Enable additional high-value lints
 unsafe_op_in_unsafe_fn = "warn"
 missing_docs = "warn"
+unreachable_pub = "warn"
+rust_2018_idioms = "warn"
 
-[lints.clippy]
-unwrap_used = "deny"
-expect_used = "deny"
-# panic is allowed in tests (where it's used for assertions)
-# Additional quality lints
+[workspace.lints.clippy]
+# Correctness (critical)
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+# Performance
+perf = { level = "warn", priority = -1 }
+# Code quality
+complexity = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
-# Allow some pedantic lints that are too noisy
+# Known defects (Cloudflare outage 2025-11-18)
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "warn"
+unreachable = "warn"
+# Additional high-value lints
+checked_conversions = "warn"
+fallible_impl_from = "warn"
+# Development-phase allows (too noisy)
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
@@ -149,6 +163,10 @@ significant_drop_tightening = "allow"
 redundant_pub_crate = "allow"
 missing_const_for_fn = "allow"
 option_if_let_else = "allow"
+uninlined_format_args = "allow"
+
+[lints]
+workspace = true
 
 [[bench]]
 name = "dataset_bench"
@@ -176,3 +194,10 @@ replace = "## [{{version}}] - {{date}}"
 
 [profile.dev]
 panic = "abort"
+
+[profile.test]
+opt-level = 1
+
+[profile.bench]
+lto = true
+codegen-units = 1

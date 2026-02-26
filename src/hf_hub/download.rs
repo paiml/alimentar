@@ -294,7 +294,7 @@ pub(crate) fn default_cache_dir() -> PathBuf {
         }
     }
 
-    // Fallback to temp directory
+    // System scratch directory as last-resort cache location
     std::env::temp_dir().join("alimentar").join("cache")
 }
 

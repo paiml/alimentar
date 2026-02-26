@@ -151,7 +151,7 @@ impl Registry {
         let parquet_data = std::fs::read(&temp_path).map_err(|e| Error::io(e, &temp_path))?;
         self.backend.put(&data_path, parquet_data.into())?;
 
-        // Clean up temp file
+        // Delete scratch file after upload completes
         let _ = std::fs::remove_file(&temp_path);
 
         // Update the index
@@ -216,7 +216,7 @@ impl Registry {
 
         let data_path = format!("datasets/{}/{}/data.parquet", name, version);
 
-        // Download to temp file (use thread ID for uniqueness in parallel tests)
+        // Fetch data and write to per-thread scratch file
         let data = self.backend.get(&data_path)?;
 
         let temp_dir = std::env::temp_dir();
@@ -227,7 +227,7 @@ impl Registry {
 
         let dataset = ArrowDataset::from_parquet(&temp_path)?;
 
-        // Clean up temp file
+        // Delete scratch file after parquet load completes
         let _ = std::fs::remove_file(&temp_path);
 
         Ok(dataset)

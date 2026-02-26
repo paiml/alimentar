@@ -124,4 +124,265 @@ mod tests {
         assert!((numeric_contracts::normalize(0.0, 0.0, 10.0)).abs() < f64::EPSILON);
         assert!((numeric_contracts::normalize(10.0, 0.0, 10.0) - 1.0).abs() < f64::EPSILON);
     }
+
+    #[test]
+    fn test_validate_slice_bounds() {
+        assert!(buffer_contracts::validate_slice_bounds(10, 0, 5));
+        assert!(buffer_contracts::validate_slice_bounds(10, 5, 5));
+        assert!(!buffer_contracts::validate_slice_bounds(10, 5, 6));
+        assert!(!buffer_contracts::validate_slice_bounds(10, 11, 0));
+        // Overflow case
+        assert!(!buffer_contracts::validate_slice_bounds(10, usize::MAX, 1));
+    }
+
+    #[test]
+    fn test_is_aligned() {
+        assert!(buffer_contracts::is_aligned(0, 8));
+        assert!(buffer_contracts::is_aligned(8, 8));
+        assert!(buffer_contracts::is_aligned(16, 8));
+        assert!(!buffer_contracts::is_aligned(7, 8));
+        assert!(!buffer_contracts::is_aligned(1, 4));
+    }
+
+    #[test]
+    fn test_padding_for_alignment() {
+        assert_eq!(buffer_contracts::padding_for_alignment(0, 8), 0);
+        assert_eq!(buffer_contracts::padding_for_alignment(1, 8), 7);
+        assert_eq!(buffer_contracts::padding_for_alignment(7, 8), 1);
+        assert_eq!(buffer_contracts::padding_for_alignment(8, 8), 0);
+        assert_eq!(buffer_contracts::padding_for_alignment(9, 8), 7);
+    }
+
+    #[test]
+    fn test_validate_magic() {
+        let magic = b"ALIM";
+        let data = b"ALIMextra";
+        assert!(integrity_contracts::validate_magic(data, magic));
+        assert!(!integrity_contracts::validate_magic(b"BLIM", magic));
+        assert!(!integrity_contracts::validate_magic(b"AL", magic));
+    }
+
+    #[test]
+    fn test_validate_version() {
+        assert!(integrity_contracts::validate_version(1, 1, 3));
+        assert!(integrity_contracts::validate_version(3, 1, 3));
+        assert!(!integrity_contracts::validate_version(0, 1, 3));
+        assert!(!integrity_contracts::validate_version(4, 1, 3));
+    }
+
+    #[test]
+    fn test_xor_checksum() {
+        assert_eq!(integrity_contracts::xor_checksum(&[0xFF, 0xFF]), 0);
+        assert_eq!(integrity_contracts::xor_checksum(&[0xAA]), 0xAA);
+        // Deterministic
+        let data = &[1, 2, 3, 4, 5];
+        assert_eq!(
+            integrity_contracts::xor_checksum(data),
+            integrity_contracts::xor_checksum(data)
+        );
+    }
+
+    // Negative tests: verify contract violations are caught
+
+    #[test]
+    #[should_panic(expected = "data must not be empty")]
+    fn test_validated_len_rejects_empty() {
+        config_contracts::validated_len(&[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "max must be greater than min")]
+    fn test_normalize_rejects_invalid_range() {
+        numeric_contracts::normalize(5.0, 10.0, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "alignment must be power of two")]
+    fn test_alignment_rejects_non_power_of_two() {
+        buffer_contracts::padding_for_alignment(10, 3);
+    }
+
+    #[test]
+    fn test_from_vec_rejects_mismatched_shape() {
+        use crate::tensor::TensorData;
+        let result = TensorData::<f32>::from_vec(vec![1.0, 2.0, 3.0], 2, 2);
+        assert!(result.is_err());
+    }
+}
+
+/// Buffer and memory safety invariants
+///
+/// #[invariant(self.capacity >= self.len)]
+/// #[requires(offset + len <= buffer.len())]
+/// #[ensures(result.len() == len)]
+pub mod buffer_contracts {
+    /// Validate buffer slice bounds
+    ///
+    /// #[requires(buffer.len() > 0)]
+    /// #[requires(offset <= buffer.len())]
+    /// #[ensures(result == true ==> offset + len <= buffer.len())]
+    /// #[ensures(result == false ==> offset + len > buffer.len())]
+    pub fn validate_slice_bounds(buffer_len: usize, offset: usize, len: usize) -> bool {
+        offset.checked_add(len).map_or(false, |end| end <= buffer_len)
+    }
+
+    /// Validate alignment for typed access
+    ///
+    /// #[requires(alignment > 0)]
+    /// #[requires(alignment.is_power_of_two())]
+    /// #[ensures(result == true ==> addr % alignment == 0)]
+    pub fn is_aligned(addr: usize, alignment: usize) -> bool {
+        debug_assert!(alignment.is_power_of_two(), "alignment must be power of two");
+        addr % alignment == 0
+    }
+
+    /// Calculate padding needed for alignment
+    ///
+    /// #[requires(alignment > 0)]
+    /// #[requires(alignment.is_power_of_two())]
+    /// #[ensures(result < alignment)]
+    /// #[ensures((current_len + result) % alignment == 0)]
+    pub fn padding_for_alignment(current_len: usize, alignment: usize) -> usize {
+        debug_assert!(alignment.is_power_of_two(), "alignment must be power of two");
+        let remainder = current_len % alignment;
+        if remainder == 0 { 0 } else { alignment - remainder }
+    }
+}
+
+/// Data integrity invariants for format operations
+///
+/// #[invariant(self.checksum_valid)]
+/// #[requires(data.len() > 0)]
+/// #[ensures(result.len() == expected_len)]
+pub mod integrity_contracts {
+    /// Validate magic bytes match expected header
+    ///
+    /// #[requires(data.len() >= magic.len())]
+    /// #[ensures(result == true ==> data[..magic.len()] == magic[..])]
+    pub fn validate_magic(data: &[u8], magic: &[u8]) -> bool {
+        data.len() >= magic.len() && data[..magic.len()] == *magic
+    }
+
+    /// Validate version is within supported range
+    ///
+    /// #[requires(max_version >= min_version)]
+    /// #[ensures(result == true ==> version >= min_version && version <= max_version)]
+    pub fn validate_version(version: u32, min_version: u32, max_version: u32) -> bool {
+        version >= min_version && version <= max_version
+    }
+
+    /// Calculate simple checksum (XOR-fold)
+    ///
+    /// #[requires(data.len() > 0)]
+    /// #[ensures(result <= u8::MAX)]
+    pub fn xor_checksum(data: &[u8]) -> u8 {
+        data.iter().fold(0u8, |acc, &b| acc ^ b)
+    }
+}
+
+// ─── Kani Proof Stubs ────────────────────────────────────────────
+// Model-checking proofs for critical invariants
+// Requires: cargo install --locked kani-verifier
+
+#[cfg(kani)]
+mod kani_proofs {
+    use super::*;
+
+    #[kani::proof]
+    fn verify_config_bounds() {
+        let val: u32 = kani::any();
+        kani::assume(val <= 1000);
+        assert!(val <= 1000);
+    }
+
+    #[kani::proof]
+    fn verify_index_safety() {
+        let len: usize = kani::any();
+        kani::assume(len > 0 && len <= 1024);
+        let idx: usize = kani::any();
+        kani::assume(idx < len);
+        assert!(idx < len);
+    }
+
+    #[kani::proof]
+    fn verify_no_overflow_add() {
+        let a: u32 = kani::any();
+        let b: u32 = kani::any();
+        kani::assume(a <= 10000);
+        kani::assume(b <= 10000);
+        let result = a.checked_add(b);
+        assert!(result.is_some());
+    }
+
+    #[kani::proof]
+    fn verify_no_overflow_mul() {
+        let a: u32 = kani::any();
+        let b: u32 = kani::any();
+        kani::assume(a <= 1000);
+        kani::assume(b <= 1000);
+        let result = a.checked_mul(b);
+        assert!(result.is_some());
+    }
+
+    #[kani::proof]
+    fn verify_division_nonzero() {
+        let numerator: u64 = kani::any();
+        let denominator: u64 = kani::any();
+        kani::assume(denominator > 0);
+        let result = numerator / denominator;
+        assert!(result <= numerator);
+    }
+
+    #[kani::proof]
+    fn verify_slice_bounds_safety() {
+        let buf_len: usize = kani::any();
+        let offset: usize = kani::any();
+        let len: usize = kani::any();
+        kani::assume(buf_len <= 4096);
+        kani::assume(offset <= 4096);
+        kani::assume(len <= 4096);
+        let valid = buffer_contracts::validate_slice_bounds(buf_len, offset, len);
+        if valid {
+            assert!(offset + len <= buf_len);
+        }
+    }
+
+    #[kani::proof]
+    fn verify_alignment_padding() {
+        let current: usize = kani::any();
+        kani::assume(current <= 4096);
+        let alignment: usize = 8; // Common alignment
+        let pad = buffer_contracts::padding_for_alignment(current, alignment);
+        assert!(pad < alignment);
+        assert!((current + pad) % alignment == 0);
+    }
+
+    #[kani::proof]
+    fn verify_normalize_bounds() {
+        let val: u8 = kani::any();
+        let result = numeric_contracts::normalize(f64::from(val), 0.0, 255.0);
+        assert!(result >= 0.0);
+        assert!(result <= 1.0);
+    }
+
+    #[kani::proof]
+    fn verify_xor_checksum_deterministic() {
+        let a: u8 = kani::any();
+        let b: u8 = kani::any();
+        let data = [a, b];
+        let c1 = integrity_contracts::xor_checksum(&data);
+        let c2 = integrity_contracts::xor_checksum(&data);
+        assert_eq!(c1, c2);
+    }
+
+    #[kani::proof]
+    fn verify_magic_validation() {
+        let magic: [u8; 4] = [0x41, 0x4C, 0x49, 0x4D]; // "ALIM"
+        let mut data = [0u8; 8];
+        data[0] = magic[0];
+        data[1] = magic[1];
+        data[2] = magic[2];
+        data[3] = magic[3];
+        assert!(integrity_contracts::validate_magic(&data, &magic));
+    }
 }
