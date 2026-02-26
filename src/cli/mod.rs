@@ -374,6 +374,7 @@ fn cmd_doctest_extract(
 
 #[cfg(feature = "doctest")]
 fn cmd_doctest_merge(inputs: &[PathBuf], output: &std::path::Path) -> crate::Result<()> {
+    use crate::dataset::Dataset;
     use crate::ArrowDataset;
 
     if inputs.is_empty() {

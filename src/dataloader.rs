@@ -66,6 +66,11 @@ impl<D: Dataset> DataLoader<D> {
     ///
     /// Each iteration will yield a RecordBatch with at most this many rows.
     /// The final batch may have fewer rows unless `drop_last` is set.
+    ///
+    /// #[requires(true)]
+    /// #[ensures(result.batch_size >= 1)]
+    /// #[ensures(size >= 1 ==> result.batch_size == size)]
+    /// #[ensures(size == 0 ==> result.batch_size == 1)]
     #[must_use]
     pub fn batch_size(mut self, size: usize) -> Self {
         self.batch_size = size.max(1);

@@ -73,6 +73,11 @@ impl StreamingDataset {
     ///
     /// * `source` - The data source to stream from
     /// * `buffer_size` - Maximum number of batches to buffer
+    ///
+    /// #[requires(buffer_size > 0)]
+    /// #[ensures(result.buffer_size >= 1)]
+    /// #[ensures(result.exhausted == false)]
+    /// #[invariant(self.buffer.len() <= self.buffer_size)]
     pub fn new(source: Box<dyn DataSource>, buffer_size: usize) -> Self {
         let schema = source.schema();
         Self {

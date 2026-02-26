@@ -74,6 +74,11 @@ impl<T: Clone + Default> TensorData<T> {
     /// # Errors
     ///
     /// Returns an error if the data length doesn't match rows * cols.
+    ///
+    /// #[requires(data.len() == rows * cols)]
+    /// #[ensures(result.is_ok() ==> result.shape() == [rows, cols])]
+    /// #[ensures(result.is_ok() ==> result.as_slice().len() == rows * cols)]
+    /// #[invariant(self.data.len() == self.shape[0] * self.shape[1])]
     pub fn from_vec(data: Vec<T>, rows: usize, cols: usize) -> Result<Self> {
         if data.len() != rows * cols {
             return Err(Error::data(format!(
