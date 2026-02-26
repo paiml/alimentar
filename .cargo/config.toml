@@ -1,6 +1,7 @@
 # Cargo configuration for alimentar
 
 [build]
+incremental = true
 # Use all available cores
 jobs = -1
 # ZRAM build acceleration

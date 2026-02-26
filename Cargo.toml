@@ -161,3 +161,10 @@ required-features = ["doctest"]
 [[example]]
 name = "hub_publishing"
 required-features = ["hf-hub"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[package.metadata.release]
+shared-version = true

@@ -221,6 +221,10 @@ If you use alimentar in your research, please cite:
 }
 ```
 
+## Contributing
+
+Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) guide for details.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
