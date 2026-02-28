@@ -61,4 +61,5 @@ pub use profiles::QualityProfile;
 // Re-export check types
 pub use checks::{
     ColumnQuality, NumericStats, QualityChecker, QualityIssue, QualityReport, QualityThresholds,
+    TextColumnStats,
 };
