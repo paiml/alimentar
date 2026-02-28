@@ -465,6 +465,196 @@ impl ImbalanceDetector {
     }
 }
 
+/// Strategy for resampling an imbalanced dataset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResampleStrategy {
+    /// Duplicate minority class samples to match majority count.
+    Oversample,
+    /// Reduce majority class samples to match minority count.
+    Undersample,
+}
+
+/// Resample a classification dataset to address class imbalance.
+///
+/// Given a dataset and a label column, this function either oversamples
+/// minority classes (duplicating rows) or undersamples the majority class
+/// (removing rows) to produce a more balanced dataset.
+///
+/// # Arguments
+/// * `dataset` - Source dataset
+/// * `label_column` - Name of the integer or string label column
+/// * `strategy` - Oversample or Undersample
+/// * `seed` - Random seed for deterministic undersampling
+///
+/// # Errors
+/// Returns error if label column not found or dataset is empty.
+#[cfg(feature = "shuffle")]
+#[allow(clippy::cast_possible_truncation)]
+/// Group row indices by label value from an Arrow array column.
+///
+/// Supports `Int64Array`, `Int32Array`, and `StringArray` label types.
+fn group_rows_by_label(
+    label_array: &dyn arrow::array::Array,
+    n: usize,
+    label_column: &str,
+) -> Result<std::collections::HashMap<String, Vec<u32>>> {
+    use arrow::array::{Array, Int32Array, Int64Array, StringArray};
+
+    let mut groups: std::collections::HashMap<String, Vec<u32>> = std::collections::HashMap::new();
+
+    if let Some(arr) = label_array.as_any().downcast_ref::<Int64Array>() {
+        for i in 0..n {
+            if !arr.is_null(i) {
+                groups.entry(arr.value(i).to_string()).or_default().push(i as u32);
+            }
+        }
+    } else if let Some(arr) = label_array.as_any().downcast_ref::<Int32Array>() {
+        for i in 0..n {
+            if !arr.is_null(i) {
+                groups.entry(arr.value(i).to_string()).or_default().push(i as u32);
+            }
+        }
+    } else if let Some(arr) = label_array.as_any().downcast_ref::<StringArray>() {
+        for i in 0..n {
+            if !arr.is_null(i) {
+                groups.entry(arr.value(i).to_string()).or_default().push(i as u32);
+            }
+        }
+    } else {
+        return Err(Error::invalid_config(format!(
+            "Unsupported column type for '{label_column}'"
+        )));
+    }
+
+    Ok(groups)
+}
+
+/// Balance group indices to a target count via oversampling or undersampling.
+///
+/// Groups smaller than `target` are repeated; groups larger are randomly subsampled.
+fn balance_group_indices(
+    groups: &std::collections::HashMap<String, Vec<u32>>,
+    target: usize,
+    rng: &mut rand::rngs::StdRng,
+) -> Vec<u32> {
+    use rand::seq::SliceRandom;
+
+    let mut all_indices: Vec<u32> = Vec::new();
+    for indices in groups.values() {
+        if indices.len() == target {
+            all_indices.extend_from_slice(indices);
+        } else if indices.len() < target {
+            all_indices.extend_from_slice(indices);
+            let mut extra: Vec<u32> = Vec::with_capacity(target - indices.len());
+            while extra.len() + indices.len() < target {
+                extra.extend_from_slice(indices);
+            }
+            extra.truncate(target - indices.len());
+            extra.shuffle(rng);
+            all_indices.extend(extra);
+        } else {
+            let mut sampled = indices.clone();
+            sampled.shuffle(rng);
+            sampled.truncate(target);
+            all_indices.extend(sampled);
+        }
+    }
+    all_indices.shuffle(rng);
+    all_indices
+}
+
+/// Resample a classification dataset to address class imbalance.
+///
+/// Given a dataset and a label column, either oversamples minority classes
+/// or undersamples majority classes to produce a balanced dataset.
+pub fn resample(
+    dataset: &ArrowDataset,
+    label_column: &str,
+    strategy: ResampleStrategy,
+    seed: u64,
+) -> Result<ArrowDataset> {
+    use arrow::compute;
+    use rand::SeedableRng;
+
+    let batches: Vec<arrow::array::RecordBatch> = dataset.iter().collect();
+    let batch = if batches.len() == 1 {
+        batches.into_iter().next().ok_or_else(|| Error::empty_dataset("empty"))?
+    } else {
+        arrow::compute::concat_batches(&dataset.schema(), &batches).map_err(Error::Arrow)?
+    };
+    let schema = batch.schema();
+    let col_idx = schema
+        .fields()
+        .iter()
+        .position(|f| f.name() == label_column)
+        .ok_or_else(|| {
+            Error::invalid_config(format!("Column '{label_column}' not found in schema"))
+        })?;
+
+    let groups = group_rows_by_label(batch.column(col_idx).as_ref(), batch.num_rows(), label_column)?;
+
+    if groups.is_empty() {
+        return Err(Error::empty_dataset("No valid labels found for resampling"));
+    }
+
+    let target = match strategy {
+        ResampleStrategy::Oversample => groups.values().map(|v| v.len()).max().unwrap_or(0),
+        ResampleStrategy::Undersample => groups.values().map(|v| v.len()).min().unwrap_or(0),
+    };
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    let all_indices = balance_group_indices(&groups, target, &mut rng);
+
+    let indices_array = arrow::array::UInt32Array::from(all_indices);
+    let columns: Vec<arrow::array::ArrayRef> = (0..batch.num_columns())
+        .map(|i| compute::take(batch.column(i), &indices_array, None))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::invalid_config(format!("Arrow take failed: {e}")))?;
+
+    let result_batch = arrow::array::RecordBatch::try_new(schema, columns)
+        .map_err(|e| Error::invalid_config(format!("Failed to create resampled batch: {e}")))?;
+
+    ArrowDataset::from_batch(result_batch)
+}
+
+/// Compute sqrt-inverse class weights for weighted loss.
+///
+/// Returns a vector of weights where `weights[i]` corresponds to class `i`.
+/// Weights are computed as `sqrt(N / (K * count_i))` and normalized to sum to K.
+///
+/// # Arguments
+/// * `class_counts` - Ordered counts per class (index = class label)
+///
+/// # Returns
+/// Vector of weights, one per class
+pub fn sqrt_inverse_weights(class_counts: &[usize]) -> Vec<f32> {
+    let k = class_counts.len() as f64;
+    let n: f64 = class_counts.iter().sum::<usize>() as f64;
+
+    if k == 0.0 || n == 0.0 {
+        return Vec::new();
+    }
+
+    let raw: Vec<f64> = class_counts
+        .iter()
+        .map(|&c| {
+            if c == 0 {
+                0.0
+            } else {
+                (n / (k * c as f64)).sqrt()
+            }
+        })
+        .collect();
+
+    // Normalize so weights sum to K
+    let sum: f64 = raw.iter().sum();
+    if sum == 0.0 {
+        return vec![1.0; class_counts.len()];
+    }
+
+    raw.iter().map(|&w| (w * k / sum) as f32).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -822,5 +1012,83 @@ mod tests {
         assert_eq!(report.distribution.num_classes, 3);
         assert_eq!(report.distribution.majority_class, Some("A".to_string()));
         assert_eq!(report.distribution.minority_class, Some("C".to_string()));
+    }
+
+    #[cfg(feature = "shuffle")]
+    #[test]
+    fn test_resample_oversample() {
+        // Create imbalanced dataset: A=10, B=2
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("text", DataType::Utf8, false),
+            Field::new("label", DataType::Int32, false),
+        ]));
+        let mut texts = Vec::new();
+        let mut labels = Vec::new();
+        for i in 0..10 {
+            texts.push(format!("text_a_{i}"));
+            labels.push(0i32);
+        }
+        for i in 0..2 {
+            texts.push(format!("text_b_{i}"));
+            labels.push(1i32);
+        }
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(StringArray::from(texts)),
+                Arc::new(Int32Array::from(labels)),
+            ],
+        )
+        .unwrap();
+        let ds = ArrowDataset::from_batch(batch).unwrap();
+
+        let result = resample(&ds, "label", ResampleStrategy::Oversample, 42).unwrap();
+        // Both classes should have 10 samples each = 20 total
+        assert_eq!(result.len(), 20);
+    }
+
+    #[cfg(feature = "shuffle")]
+    #[test]
+    fn test_resample_undersample() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("text", DataType::Utf8, false),
+            Field::new("label", DataType::Int32, false),
+        ]));
+        let mut texts = Vec::new();
+        let mut labels = Vec::new();
+        for i in 0..10 {
+            texts.push(format!("text_a_{i}"));
+            labels.push(0i32);
+        }
+        for i in 0..2 {
+            texts.push(format!("text_b_{i}"));
+            labels.push(1i32);
+        }
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(StringArray::from(texts)),
+                Arc::new(Int32Array::from(labels)),
+            ],
+        )
+        .unwrap();
+        let ds = ArrowDataset::from_batch(batch).unwrap();
+
+        let result = resample(&ds, "label", ResampleStrategy::Undersample, 42).unwrap();
+        // Both classes should have 2 samples each = 4 total
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_sqrt_inverse_weights() {
+        // 5-class SSC-like distribution: [17252, 2402, 2858, 2875, 3920]
+        let counts = vec![17252, 2402, 2858, 2875, 3920];
+        let weights = sqrt_inverse_weights(&counts);
+        assert_eq!(weights.len(), 5);
+        // Safe class (majority) should have lowest weight
+        assert!(weights[0] < weights[1]);
+        // Weights should sum to approximately K=5
+        let sum: f32 = weights.iter().sum();
+        assert!((sum - 5.0).abs() < 0.01);
     }
 }
