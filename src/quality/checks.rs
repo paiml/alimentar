@@ -734,3 +734,125 @@ impl QualityChecker {
         score.clamp(0.0, 100.0)
     }
 }
+
+/// Statistics for a text (string) column — useful for ML classification audits.
+#[derive(Debug, Clone)]
+pub struct TextColumnStats {
+    /// Minimum character length
+    pub min_len: usize,
+    /// Maximum character length
+    pub max_len: usize,
+    /// Mean character length
+    pub mean_len: f64,
+    /// Median character length (P50)
+    pub p50_len: usize,
+    /// 95th percentile character length
+    pub p95_len: usize,
+    /// 99th percentile character length
+    pub p99_len: usize,
+    /// Number of empty or whitespace-only strings
+    pub empty_count: usize,
+    /// Number of strings matching a preamble pattern (e.g., "#!/")
+    pub preamble_count: usize,
+    /// Total valid (non-null) strings
+    pub total: usize,
+}
+
+impl TextColumnStats {
+    /// Compute text column statistics from an ArrowDataset.
+    ///
+    /// # Arguments
+    /// * `dataset` - Source dataset
+    /// * `column` - Name of the string column
+    /// * `preamble_prefix` - Optional prefix to count as "preamble" (e.g., "#!/")
+    ///
+    /// # Errors
+    /// Returns error if column not found or not a string type.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    pub fn from_dataset(
+        dataset: &crate::ArrowDataset,
+        column: &str,
+        preamble_prefix: Option<&str>,
+    ) -> crate::Result<Self> {
+        use arrow::array::{Array, StringArray};
+        use crate::Dataset;
+
+        let schema = dataset.schema();
+        let col_idx = schema
+            .fields()
+            .iter()
+            .position(|f| f.name() == column)
+            .ok_or_else(|| {
+                crate::Error::invalid_config(format!("Column '{column}' not found"))
+            })?;
+
+        let mut lengths: Vec<usize> = Vec::with_capacity(dataset.len());
+        let mut empty_count = 0usize;
+        let mut preamble_count = 0usize;
+
+        for batch in dataset.iter() {
+            let array = batch.column(col_idx);
+            let str_arr = array
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| {
+                    crate::Error::invalid_config(format!(
+                        "Column '{column}' is not a string type"
+                    ))
+                })?;
+
+            for i in 0..str_arr.len() {
+                if str_arr.is_null(i) {
+                    continue;
+                }
+                let val = str_arr.value(i);
+                let len = val.len();
+                lengths.push(len);
+
+                if val.trim().is_empty() {
+                    empty_count += 1;
+                }
+                if let Some(prefix) = preamble_prefix {
+                    if val.starts_with(prefix) {
+                        preamble_count += 1;
+                    }
+                }
+            }
+        }
+
+        if lengths.is_empty() {
+            return Ok(Self {
+                min_len: 0,
+                max_len: 0,
+                mean_len: 0.0,
+                p50_len: 0,
+                p95_len: 0,
+                p99_len: 0,
+                empty_count: 0,
+                preamble_count: 0,
+                total: 0,
+            });
+        }
+
+        lengths.sort_unstable();
+        let total = lengths.len();
+        let min_len = lengths[0];
+        let max_len = lengths[total - 1];
+        let mean_len = lengths.iter().sum::<usize>() as f64 / total as f64;
+        let p50_len = lengths[total / 2];
+        let p95_len = lengths[(total as f64 * 0.95) as usize];
+        let p99_len = lengths[(total as f64 * 0.99).min((total - 1) as f64) as usize];
+
+        Ok(Self {
+            min_len,
+            max_len,
+            mean_len,
+            p50_len,
+            p95_len,
+            p99_len,
+            empty_count,
+            preamble_count,
+            total,
+        })
+    }
+}

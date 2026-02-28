@@ -120,12 +120,14 @@ pub use federated::{
 };
 pub use imbalance::{
     ClassDistribution, ImbalanceDetector, ImbalanceMetrics, ImbalanceRecommendation,
-    ImbalanceReport, ImbalanceSeverity,
+    ImbalanceReport, ImbalanceSeverity, ResampleStrategy, sqrt_inverse_weights,
 };
+#[cfg(feature = "shuffle")]
+pub use imbalance::resample;
 #[cfg(feature = "mmap")]
 pub use mmap::{MmapDataset, MmapDatasetBuilder};
 pub use parallel::{ParallelDataLoader, ParallelDataLoaderBuilder};
-pub use quality::{ColumnQuality, QualityChecker, QualityIssue, QualityProfile, QualityReport};
+pub use quality::{ColumnQuality, QualityChecker, QualityIssue, QualityProfile, QualityReport, TextColumnStats};
 pub use sketch::{
     Centroid, DDSketch, DataSketch, DistributedDriftDetector, SketchDriftResult, SketchType,
     TDigest,
