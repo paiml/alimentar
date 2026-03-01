@@ -74,6 +74,27 @@ enum Commands {
         #[arg(short = 'n', long, default_value = "0")]
         max_rows: usize,
     },
+    /// Apply Fill-in-the-Middle (FIM) transform for code model training
+    #[cfg(feature = "shuffle")]
+    Fim {
+        /// Input dataset file (Parquet/CSV/JSON)
+        input: PathBuf,
+        /// Output file path
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Column containing code text
+        #[arg(long, default_value = "text")]
+        column: String,
+        /// FIM application rate (0.0-1.0)
+        #[arg(long, default_value = "0.5")]
+        rate: f64,
+        /// FIM format: psm or spm
+        #[arg(long, default_value = "psm")]
+        format: String,
+        /// Random seed for reproducibility
+        #[arg(long, default_value = "42")]
+        seed: u64,
+    },
     /// Interactive TUI viewer for datasets
     View {
         /// Path to dataset file (Parquet/Arrow/CSV/JSON)
@@ -158,6 +179,15 @@ pub fn run() -> ExitCode {
             seed,
             max_rows,
         } => basic::cmd_mix(&inputs, &output, seed, max_rows),
+        #[cfg(feature = "shuffle")]
+        Commands::Fim {
+            input,
+            output,
+            column,
+            rate,
+            format,
+            seed,
+        } => basic::cmd_fim(&input, &output, &column, rate, &format, seed),
         Commands::View { path, search } => view::cmd_view(&path, search.as_deref()),
         Commands::Import { source } => match source {
             ImportSource::Local {

@@ -274,6 +274,46 @@ pub(crate) fn cmd_mix(
     Ok(())
 }
 
+#[cfg(feature = "shuffle")]
+pub(crate) fn cmd_fim(
+    input: &PathBuf,
+    output: &PathBuf,
+    column: &str,
+    rate: f64,
+    format: &str,
+    seed: u64,
+) -> crate::Result<()> {
+    use crate::transform::{Fim, FimFormat, Transform};
+
+    let dataset = load_dataset(input)?;
+    let fim_format = match format {
+        "spm" => FimFormat::SPM,
+        _ => FimFormat::PSM,
+    };
+
+    let fim = Fim::new(column)
+        .with_rate(rate)
+        .with_format(fim_format)
+        .with_seed(seed);
+
+    let mut all_batches = Vec::new();
+    for batch in dataset.iter() {
+        all_batches.push(fim.apply(batch)?);
+    }
+
+    let transformed = ArrowDataset::new(all_batches)?;
+    save_dataset(&transformed, output)?;
+
+    println!(
+        "FIM transform ({} format, {:.0}% rate) applied to '{}' column",
+        format.to_uppercase(),
+        rate * 100.0,
+        column
+    );
+    println!("{} rows → {}", dataset.len(), output.display());
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(
     clippy::cast_possible_truncation,

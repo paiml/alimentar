@@ -138,7 +138,7 @@ pub use transform::{
     Skip, Sort, SortOrder, Take, Transform, Unique,
 };
 #[cfg(feature = "shuffle")]
-pub use transform::{Sample, Shuffle};
+pub use transform::{Fim, FimFormat, FimTokens, Sample, Shuffle};
 pub use tui::{DatasetAdapter, DatasetViewer, RowDetailView, SchemaInspector, TuiError, TuiResult};
 #[cfg(feature = "shuffle")]
 pub use weighted::WeightedDataLoader;
