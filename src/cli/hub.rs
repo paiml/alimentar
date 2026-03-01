@@ -5,11 +5,22 @@ use std::path::PathBuf;
 use clap::Subcommand;
 
 /// Import source options.
-#[cfg(feature = "hf-hub")]
 #[derive(Subcommand)]
 pub enum ImportSource {
+    /// Import from a local file (CSV, JSON, JSONL, Parquet, Arrow)
+    Local {
+        /// Input file or directory path
+        input: PathBuf,
+        /// Output file path (format inferred from extension)
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Force output format (csv, json, jsonl, parquet, arrow)
+        #[arg(short, long)]
+        format: Option<String>,
+    },
     /// Import from HuggingFace Hub.
     #[allow(clippy::doc_markdown)]
+    #[cfg(feature = "hf-hub")]
     Hf {
         /// Dataset repository ID (e.g., "squad", "openai/gsm8k")
         repo_id: String,
@@ -26,6 +37,46 @@ pub enum ImportSource {
         #[arg(long, default_value = "train")]
         split: String,
     },
+}
+
+/// Import a local dataset file, converting between formats.
+pub(crate) fn cmd_import_local(
+    input: &PathBuf,
+    output: &PathBuf,
+    format: Option<&str>,
+) -> crate::Result<()> {
+    use super::basic::{load_dataset, save_dataset};
+    use crate::Dataset;
+
+    if !input.exists() {
+        return Err(crate::Error::io(
+            std::io::Error::new(std::io::ErrorKind::NotFound, "Input file not found"),
+            input,
+        ));
+    }
+
+    println!("Importing {}...", input.display());
+    let dataset = load_dataset(input)?;
+
+    // If format override given, create a temporary path with that extension
+    if let Some(fmt) = format {
+        let forced_output = output.with_extension(fmt);
+        save_dataset(&dataset, &forced_output)?;
+        if forced_output != *output {
+            std::fs::rename(&forced_output, output).map_err(|e| crate::Error::io(e, output))?;
+        }
+    } else {
+        save_dataset(&dataset, output)?;
+    }
+
+    println!(
+        "Imported {} rows: {} -> {}",
+        dataset.len(),
+        input.display(),
+        output.display()
+    );
+
+    Ok(())
 }
 
 /// HuggingFace Hub commands.

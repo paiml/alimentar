@@ -9,7 +9,6 @@ use clap::{Parser, Subcommand};
 mod basic;
 mod drift;
 mod fed;
-#[cfg(feature = "hf-hub")]
 mod hub;
 mod quality;
 mod registry;
@@ -19,7 +18,8 @@ mod view;
 pub use drift::DriftCommands;
 pub use fed::FedCommands;
 #[cfg(feature = "hf-hub")]
-pub use hub::{HubCommands, ImportSource};
+pub use hub::HubCommands;
+pub use hub::ImportSource;
 pub use quality::QualityCommands;
 pub use registry::RegistryCommands;
 
@@ -67,9 +67,7 @@ enum Commands {
         #[arg(long)]
         search: Option<String>,
     },
-    /// Import dataset from HuggingFace Hub.
-    #[allow(clippy::doc_markdown)]
-    #[cfg(feature = "hf-hub")]
+    /// Import dataset from local files or HuggingFace Hub
     Import {
         #[command(subcommand)]
         source: ImportSource,
@@ -140,8 +138,13 @@ pub fn run() -> ExitCode {
         Commands::Head { path, rows } => basic::cmd_head(&path, rows),
         Commands::Schema { path } => basic::cmd_schema(&path),
         Commands::View { path, search } => view::cmd_view(&path, search.as_deref()),
-        #[cfg(feature = "hf-hub")]
         Commands::Import { source } => match source {
+            ImportSource::Local {
+                input,
+                output,
+                format,
+            } => hub::cmd_import_local(&input, &output, format.as_deref()),
+            #[cfg(feature = "hf-hub")]
             ImportSource::Hf {
                 repo_id,
                 output,
@@ -278,6 +281,8 @@ pub fn run() -> ExitCode {
                 output,
                 strategy,
                 train_ratio,
+                test_ratio,
+                validation_ratio,
                 seed,
                 stratify_column,
                 format,
@@ -286,6 +291,8 @@ pub fn run() -> ExitCode {
                 &output,
                 &strategy,
                 train_ratio,
+                test_ratio,
+                validation_ratio,
                 seed,
                 stratify_column.as_deref(),
                 &format,
