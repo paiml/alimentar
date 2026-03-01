@@ -59,6 +59,21 @@ enum Commands {
         /// Path to dataset file
         path: PathBuf,
     },
+    /// Mix multiple datasets with weighted sampling
+    Mix {
+        /// Input files with optional weights (file:weight, e.g., "data.parquet:0.8")
+        #[arg(required = true)]
+        inputs: Vec<String>,
+        /// Output file path
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Random seed for reproducibility
+        #[arg(short, long, default_value = "42")]
+        seed: u64,
+        /// Maximum total rows in output (0 = sum of all weighted inputs)
+        #[arg(short = 'n', long, default_value = "0")]
+        max_rows: usize,
+    },
     /// Interactive TUI viewer for datasets
     View {
         /// Path to dataset file (Parquet/Arrow/CSV/JSON)
@@ -137,6 +152,12 @@ pub fn run() -> ExitCode {
         Commands::Info { path } => basic::cmd_info(&path),
         Commands::Head { path, rows } => basic::cmd_head(&path, rows),
         Commands::Schema { path } => basic::cmd_schema(&path),
+        Commands::Mix {
+            inputs,
+            output,
+            seed,
+            max_rows,
+        } => basic::cmd_mix(&inputs, &output, seed, max_rows),
         Commands::View { path, search } => view::cmd_view(&path, search.as_deref()),
         Commands::Import { source } => match source {
             ImportSource::Local {
