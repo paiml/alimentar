@@ -143,6 +143,137 @@ pub(crate) fn cmd_schema(path: &PathBuf) -> crate::Result<()> {
     Ok(())
 }
 
+/// Parse an input spec of the form "path" or "path:weight".
+#[cfg(feature = "shuffle")]
+fn parse_input_spec(spec: &str) -> crate::Result<(PathBuf, f64)> {
+    if let Some((path, weight_str)) = spec.rsplit_once(':') {
+        // Check if the part after : is a valid float (not a Windows drive letter)
+        if let Ok(weight) = weight_str.parse::<f64>() {
+            return Ok((PathBuf::from(path), weight));
+        }
+    }
+    Ok((PathBuf::from(spec), 1.0))
+}
+
+/// Load input datasets from specs.
+#[cfg(feature = "shuffle")]
+fn load_mix_inputs(inputs: &[String]) -> crate::Result<(Vec<(ArrowDataset, f64, String)>, f64)> {
+    let mut datasets = Vec::new();
+    let mut total_weight = 0.0;
+
+    for spec in inputs {
+        let (path, weight) = parse_input_spec(spec)?;
+        if !path.exists() {
+            return Err(crate::Error::io(
+                std::io::Error::new(std::io::ErrorKind::NotFound, "Input file not found"),
+                &path,
+            ));
+        }
+        let dataset = load_dataset(&path)?;
+        println!(
+            "  Loaded {} ({} rows, weight={:.2})",
+            path.display(),
+            dataset.len(),
+            weight
+        );
+        total_weight += weight;
+        datasets.push((dataset, weight, path.display().to_string()));
+    }
+    Ok((datasets, total_weight))
+}
+
+/// Sample rows from a dataset with optional upsampling.
+#[cfg(feature = "shuffle")]
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn sample_dataset(
+    dataset: &ArrowDataset,
+    rows_needed: usize,
+    rng: &mut rand::rngs::StdRng,
+) -> crate::Result<arrow::array::RecordBatch> {
+    use rand::seq::SliceRandom;
+
+    let available = dataset.len();
+    let mut indices: Vec<usize> = (0..available).collect();
+    indices.shuffle(rng);
+
+    if rows_needed > available {
+        let extra: Vec<usize> = (0..available).cycle().take(rows_needed - available).collect();
+        indices.extend(extra);
+    }
+    indices.truncate(rows_needed);
+
+    let schema = dataset.schema();
+    let flat_batches: Vec<_> = dataset.iter().collect();
+    let concatenated = arrow::compute::concat_batches(&schema, &flat_batches)
+        .map_err(|e| crate::Error::invalid_config(format!("Arrow concat error: {e}")))?;
+
+    let take_indices: Vec<u32> = indices.iter().map(|&i| i as u32).collect();
+    let index_array = arrow::array::UInt32Array::from(take_indices);
+
+    let columns: Vec<arrow::array::ArrayRef> = (0..concatenated.num_columns())
+        .map(|col_idx| {
+            arrow::compute::take(concatenated.column(col_idx), &index_array, None)
+                .expect("take should succeed")
+        })
+        .collect();
+
+    arrow::array::RecordBatch::try_new(schema, columns)
+        .map_err(|e| crate::Error::invalid_config(format!("RecordBatch error: {e}")))
+}
+
+/// Mix multiple datasets with weighted sampling.
+#[cfg(feature = "shuffle")]
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+pub(crate) fn cmd_mix(
+    inputs: &[String],
+    output: &PathBuf,
+    seed: u64,
+    max_rows: usize,
+) -> crate::Result<()> {
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    if inputs.is_empty() {
+        return Err(crate::Error::invalid_config("No input files provided"));
+    }
+
+    let (datasets, total_weight) = load_mix_inputs(inputs)?;
+    if total_weight == 0.0 {
+        return Err(crate::Error::invalid_config("All weights are zero"));
+    }
+
+    let total_available: usize = datasets.iter().map(|(d, _, _)| d.len()).sum();
+    let target_rows = if max_rows > 0 { max_rows } else { total_available };
+
+    println!("\nMixing {} datasets → {} target rows", datasets.len(), target_rows);
+
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut all_batches = Vec::new();
+    let mut mixed_rows = 0;
+
+    for (dataset, weight, name) in &datasets {
+        let fraction = weight / total_weight;
+        let rows_for_dataset = (target_rows as f64 * fraction) as usize;
+
+        let batch = sample_dataset(dataset, rows_for_dataset, &mut rng)?;
+        let count = batch.num_rows();
+        all_batches.push(batch);
+        mixed_rows += count;
+
+        println!("  {} → {} rows ({:.1}%)", name, count, fraction * 100.0);
+    }
+
+    if all_batches.is_empty() {
+        return Err(crate::Error::invalid_config("No data to mix"));
+    }
+
+    let mixed = ArrowDataset::new(all_batches)?;
+    save_dataset(&mixed, output)?;
+
+    println!("\nMixed {} rows → {}", mixed_rows, output.display());
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(
     clippy::cast_possible_truncation,
