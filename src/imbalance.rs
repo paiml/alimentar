@@ -532,6 +532,7 @@ fn group_rows_by_label(
 /// Balance group indices to a target count via oversampling or undersampling.
 ///
 /// Groups smaller than `target` are repeated; groups larger are randomly subsampled.
+#[cfg(feature = "shuffle")]
 fn balance_group_indices(
     groups: &std::collections::HashMap<String, Vec<u32>>,
     target: usize,
@@ -567,6 +568,7 @@ fn balance_group_indices(
 ///
 /// Given a dataset and a label column, either oversamples minority classes
 /// or undersamples majority classes to produce a balanced dataset.
+#[cfg(feature = "shuffle")]
 pub fn resample(
     dataset: &ArrowDataset,
     label_column: &str,
