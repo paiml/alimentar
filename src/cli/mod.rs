@@ -95,6 +95,38 @@ enum Commands {
         #[arg(long, default_value = "42")]
         seed: u64,
     },
+    /// Deduplicate dataset by text content (R-019)
+    Dedup {
+        /// Input dataset file
+        input: PathBuf,
+        /// Output file path
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Column to dedup on (auto-detected if not specified)
+        #[arg(long)]
+        column: Option<String>,
+    },
+    /// Filter dataset by text quality signals (R-022)
+    #[command(name = "filter-text")]
+    FilterText {
+        /// Input dataset file
+        input: PathBuf,
+        /// Output file path
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Column containing text (auto-detected if not specified)
+        #[arg(long)]
+        column: Option<String>,
+        /// Minimum composite quality score (0.0-1.0)
+        #[arg(long, default_value = "0.4")]
+        min_score: f64,
+        /// Minimum document length in characters
+        #[arg(long, default_value = "50")]
+        min_length: usize,
+        /// Maximum document length in characters
+        #[arg(long, default_value = "1000000")]
+        max_length: usize,
+    },
     /// Interactive TUI viewer for datasets
     View {
         /// Path to dataset file (Parquet/Arrow/CSV/JSON)
@@ -188,6 +220,10 @@ pub fn run() -> ExitCode {
             format,
             seed,
         } => basic::cmd_fim(&input, &output, &column, rate, &format, seed),
+        Commands::Dedup { input, output, column } =>
+            basic::cmd_dedup(&input, &output, column.as_deref()),
+        Commands::FilterText { input, output, column, min_score, min_length, max_length } =>
+            basic::cmd_filter_text(&input, &output, column.as_deref(), min_score, min_length, max_length),
         Commands::View { path, search } => view::cmd_view(&path, search.as_deref()),
         Commands::Import { source } => match source {
             ImportSource::Local {
