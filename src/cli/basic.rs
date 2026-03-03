@@ -314,6 +314,239 @@ pub(crate) fn cmd_fim(
     Ok(())
 }
 
+/// R-019: Deduplicate dataset rows by text content hash.
+///
+/// Uses SHA-256 content hashing for exact deduplication on the specified
+/// text column. Falls back to full-row deduplication if no column specified.
+pub(crate) fn cmd_dedup(
+    input: &PathBuf,
+    output: &PathBuf,
+    column: Option<&str>,
+) -> crate::Result<()> {
+    use crate::transform::{Transform, Unique};
+
+    let dataset = load_dataset(input)?;
+    let original_rows = dataset.len();
+
+    // Use content-hash dedup on text column, or full-row dedup
+    let dedup = match column {
+        Some(col) => Unique::by(vec![col]),
+        None => detect_text_column_dedup(&dataset),
+    };
+
+    let mut all_batches = Vec::new();
+    for batch in dataset.iter() {
+        all_batches.push(dedup.apply(batch)?);
+    }
+
+    let deduped = ArrowDataset::new(all_batches)?;
+    let deduped_rows = deduped.len();
+    save_dataset(&deduped, output)?;
+
+    let removed = original_rows - deduped_rows;
+    println!("Dedup: {} → {} rows ({} duplicates removed, {:.1}% reduction)",
+        original_rows, deduped_rows, removed,
+        removed as f64 / original_rows.max(1) as f64 * 100.0);
+    Ok(())
+}
+
+/// Auto-detect text column and create Unique transform for it.
+fn detect_text_column_dedup(dataset: &ArrowDataset) -> crate::transform::Unique {
+    use arrow::datatypes::DataType;
+    use crate::transform::Unique;
+
+    let schema = dataset.schema();
+    for name in &["text", "content", "code", "source"] {
+        if let Some((_, field)) = schema.column_with_name(name) {
+            if matches!(field.data_type(), DataType::Utf8 | DataType::LargeUtf8) {
+                return Unique::by(vec![*name]);
+            }
+        }
+    }
+    // Fallback: dedup on all columns
+    Unique::all()
+}
+
+/// R-022: Filter dataset rows by text quality signals.
+///
+/// Computes quality scores for each row and removes low-quality entries.
+/// Signals: line length, alphanumeric ratio, duplicate line ratio, entropy.
+pub(crate) fn cmd_filter_text(
+    input: &PathBuf,
+    output: &PathBuf,
+    column: Option<&str>,
+    min_score: f64,
+    min_length: usize,
+    max_length: usize,
+) -> crate::Result<()> {
+    use crate::transform::Transform;
+
+    let dataset = load_dataset(input)?;
+    let original_rows = dataset.len();
+
+    let col_name = column
+        .map(String::from)
+        .unwrap_or_else(|| find_text_column(&dataset));
+
+    let filter = TextQualityFilter::new(&col_name, min_score, min_length, max_length);
+
+    let mut all_batches = Vec::new();
+    for batch in dataset.iter() {
+        all_batches.push(filter.apply(batch)?);
+    }
+
+    let filtered = ArrowDataset::new(all_batches)?;
+    let kept = filtered.len();
+    save_dataset(&filtered, output)?;
+
+    let removed = original_rows - kept;
+    println!("Filter: {} → {} rows ({} removed, {:.1}% kept)",
+        original_rows, kept, removed,
+        kept as f64 / original_rows.max(1) as f64 * 100.0);
+    println!("  min_score={:.2} min_len={} max_len={} column='{}'",
+        min_score, min_length, max_length, col_name);
+    Ok(())
+}
+
+/// Find the first text column in a dataset.
+fn find_text_column(dataset: &ArrowDataset) -> String {
+    use arrow::datatypes::DataType;
+    let schema = dataset.schema();
+    for name in &["text", "content", "code", "source"] {
+        if let Some((_, field)) = schema.column_with_name(name) {
+            if matches!(field.data_type(), DataType::Utf8 | DataType::LargeUtf8) {
+                return (*name).to_string();
+            }
+        }
+    }
+    // Fallback: first Utf8 column
+    for field in schema.fields() {
+        if matches!(field.data_type(), DataType::Utf8 | DataType::LargeUtf8) {
+            return field.name().clone();
+        }
+    }
+    "text".to_string()
+}
+
+/// Text quality filter transform.
+struct TextQualityFilter {
+    column: String,
+    min_score: f64,
+    min_length: usize,
+    max_length: usize,
+}
+
+impl TextQualityFilter {
+    fn new(column: &str, min_score: f64, min_length: usize, max_length: usize) -> Self {
+        Self {
+            column: column.to_string(),
+            min_score,
+            min_length,
+            max_length,
+        }
+    }
+}
+
+impl crate::transform::Transform for TextQualityFilter {
+    fn apply(&self, batch: arrow::array::RecordBatch) -> crate::Result<arrow::array::RecordBatch> {
+        use arrow::array::{Array, BooleanArray, StringArray};
+        use arrow::compute::filter_record_batch;
+
+        let schema = batch.schema();
+        let col_idx = schema.column_with_name(&self.column)
+            .map(|(i, _)| i)
+            .ok_or_else(|| crate::Error::column_not_found(&self.column))?;
+
+        let text_arr = batch.column(col_idx)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or_else(|| crate::Error::column_not_found(&self.column))?;
+
+        let mask: BooleanArray = (0..text_arr.len())
+            .map(|i| {
+                if text_arr.is_null(i) {
+                    Some(false)
+                } else {
+                    let text = text_arr.value(i);
+                    Some(passes_quality(text, self.min_score, self.min_length, self.max_length))
+                }
+            })
+            .collect();
+
+        filter_record_batch(&batch, &mask).map_err(crate::Error::Arrow)
+    }
+}
+
+/// Check if a text document passes quality thresholds.
+fn passes_quality(text: &str, min_score: f64, min_len: usize, max_len: usize) -> bool {
+    let len = text.len();
+    if len < min_len || len > max_len {
+        return false;
+    }
+    composite_score(text) >= min_score
+}
+
+/// Compute composite quality score (0.0-1.0) for a text document.
+fn composite_score(text: &str) -> f64 {
+    let s1 = score_alnum_ratio(text);
+    let s2 = score_line_length(text);
+    let s3 = score_dup_lines(text);
+    let s4 = score_entropy(text);
+    (s1 + s2 + s3 + s4) / 4.0
+}
+
+/// Alphanumeric character ratio. Below 0.3 = likely binary/garbage.
+fn score_alnum_ratio(text: &str) -> f64 {
+    if text.is_empty() { return 0.0; }
+    let alnum = text.chars().filter(|c| c.is_alphanumeric()).count();
+    let ratio = alnum as f64 / text.len() as f64;
+    if ratio < 0.2 { 0.0 }
+    else if ratio < 0.3 { ratio }
+    else { 1.0 }
+}
+
+/// Average line length score. Ideal 30-80 chars.
+fn score_line_length(text: &str) -> f64 {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() { return 0.0; }
+    let avg = text.len() as f64 / lines.len() as f64;
+    if avg < 10.0 { 0.2 }
+    else if avg > 200.0 { 0.5 }
+    else { 1.0 }
+}
+
+/// Duplicate line ratio. High = boilerplate.
+fn score_dup_lines(text: &str) -> f64 {
+    use std::collections::HashSet;
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() <= 1 { return 1.0; }
+    let unique: HashSet<&str> = lines.iter().copied().collect();
+    let dup_ratio = 1.0 - (unique.len() as f64 / lines.len() as f64);
+    if dup_ratio > 0.5 { 0.2 }
+    else { 1.0 - dup_ratio }
+}
+
+/// Character-level Shannon entropy. Low = repetitive, high = random/binary.
+fn score_entropy(text: &str) -> f64 {
+    if text.is_empty() { return 0.0; }
+    let mut counts = [0u32; 256];
+    for &b in text.as_bytes() {
+        counts[b as usize] += 1;
+    }
+    let len = text.len() as f64;
+    let entropy: f64 = counts.iter()
+        .filter(|&&c| c > 0)
+        .map(|&c| {
+            let p = c as f64 / len;
+            -p * p.ln()
+        })
+        .sum();
+    let e = entropy / std::f64::consts::LN_2; // bits
+    if e < 2.0 { 0.2 }
+    else if e > 6.5 { 0.3 }
+    else { 1.0 }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::cast_possible_truncation,
