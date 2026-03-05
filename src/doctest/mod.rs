@@ -3,6 +3,7 @@
 //! This module provides tools for extracting Python doctests from source files
 //! and converting them to Arrow/Parquet format for ML training data.
 
+pub mod instruct;
 mod parser;
 
 use std::sync::Arc;
