@@ -197,7 +197,10 @@ fn sample_dataset(
     indices.shuffle(rng);
 
     if rows_needed > available {
-        let extra: Vec<usize> = (0..available).cycle().take(rows_needed - available).collect();
+        let extra: Vec<usize> = (0..available)
+            .cycle()
+            .take(rows_needed - available)
+            .collect();
         indices.extend(extra);
     }
     indices.truncate(rows_needed);
@@ -243,9 +246,17 @@ pub(crate) fn cmd_mix(
     }
 
     let total_available: usize = datasets.iter().map(|(d, _, _)| d.len()).sum();
-    let target_rows = if max_rows > 0 { max_rows } else { total_available };
+    let target_rows = if max_rows > 0 {
+        max_rows
+    } else {
+        total_available
+    };
 
-    println!("\nMixing {} datasets → {} target rows", datasets.len(), target_rows);
+    println!(
+        "\nMixing {} datasets → {} target rows",
+        datasets.len(),
+        target_rows
+    );
 
     let mut rng = StdRng::seed_from_u64(seed);
     let mut all_batches = Vec::new();
@@ -344,16 +355,20 @@ pub(crate) fn cmd_dedup(
     save_dataset(&deduped, output)?;
 
     let removed = original_rows - deduped_rows;
-    println!("Dedup: {} → {} rows ({} duplicates removed, {:.1}% reduction)",
-        original_rows, deduped_rows, removed,
-        removed as f64 / original_rows.max(1) as f64 * 100.0);
+    println!(
+        "Dedup: {} → {} rows ({} duplicates removed, {:.1}% reduction)",
+        original_rows,
+        deduped_rows,
+        removed,
+        removed as f64 / original_rows.max(1) as f64 * 100.0
+    );
     Ok(())
 }
 
 /// Auto-detect text column and create Unique transform for it.
 fn detect_text_column_dedup(dataset: &ArrowDataset) -> crate::transform::Unique {
-    use arrow::datatypes::DataType;
     use crate::transform::Unique;
+    use arrow::datatypes::DataType;
 
     let schema = dataset.schema();
     for name in &["text", "content", "code", "source"] {
@@ -400,11 +415,17 @@ pub(crate) fn cmd_filter_text(
     save_dataset(&filtered, output)?;
 
     let removed = original_rows - kept;
-    println!("Filter: {} → {} rows ({} removed, {:.1}% kept)",
-        original_rows, kept, removed,
-        kept as f64 / original_rows.max(1) as f64 * 100.0);
-    println!("  min_score={:.2} min_len={} max_len={} column='{}'",
-        min_score, min_length, max_length, col_name);
+    println!(
+        "Filter: {} → {} rows ({} removed, {:.1}% kept)",
+        original_rows,
+        kept,
+        removed,
+        kept as f64 / original_rows.max(1) as f64 * 100.0
+    );
+    println!(
+        "  min_score={:.2} min_len={} max_len={} column='{}'",
+        min_score, min_length, max_length, col_name
+    );
     Ok(())
 }
 
@@ -453,11 +474,13 @@ impl crate::transform::Transform for TextQualityFilter {
         use arrow::compute::filter_record_batch;
 
         let schema = batch.schema();
-        let col_idx = schema.column_with_name(&self.column)
+        let col_idx = schema
+            .column_with_name(&self.column)
             .map(|(i, _)| i)
             .ok_or_else(|| crate::Error::column_not_found(&self.column))?;
 
-        let text_arr = batch.column(col_idx)
+        let text_arr = batch
+            .column(col_idx)
             .as_any()
             .downcast_ref::<StringArray>()
             .ok_or_else(|| crate::Error::column_not_found(&self.column))?;
@@ -468,7 +491,12 @@ impl crate::transform::Transform for TextQualityFilter {
                     Some(false)
                 } else {
                     let text = text_arr.value(i);
-                    Some(passes_quality(text, self.min_score, self.min_length, self.max_length))
+                    Some(passes_quality(
+                        text,
+                        self.min_score,
+                        self.min_length,
+                        self.max_length,
+                    ))
                 }
             })
             .collect();
@@ -497,44 +525,64 @@ fn composite_score(text: &str) -> f64 {
 
 /// Alphanumeric character ratio. Below 0.3 = likely binary/garbage.
 fn score_alnum_ratio(text: &str) -> f64 {
-    if text.is_empty() { return 0.0; }
+    if text.is_empty() {
+        return 0.0;
+    }
     let alnum = text.chars().filter(|c| c.is_alphanumeric()).count();
     let ratio = alnum as f64 / text.len() as f64;
-    if ratio < 0.2 { 0.0 }
-    else if ratio < 0.3 { ratio }
-    else { 1.0 }
+    if ratio < 0.2 {
+        0.0
+    } else if ratio < 0.3 {
+        ratio
+    } else {
+        1.0
+    }
 }
 
 /// Average line length score. Ideal 30-80 chars.
 fn score_line_length(text: &str) -> f64 {
     let lines: Vec<&str> = text.lines().collect();
-    if lines.is_empty() { return 0.0; }
+    if lines.is_empty() {
+        return 0.0;
+    }
     let avg = text.len() as f64 / lines.len() as f64;
-    if avg < 10.0 { 0.2 }
-    else if avg > 200.0 { 0.5 }
-    else { 1.0 }
+    if avg < 10.0 {
+        0.2
+    } else if avg > 200.0 {
+        0.5
+    } else {
+        1.0
+    }
 }
 
 /// Duplicate line ratio. High = boilerplate.
 fn score_dup_lines(text: &str) -> f64 {
     use std::collections::HashSet;
     let lines: Vec<&str> = text.lines().collect();
-    if lines.len() <= 1 { return 1.0; }
+    if lines.len() <= 1 {
+        return 1.0;
+    }
     let unique: HashSet<&str> = lines.iter().copied().collect();
     let dup_ratio = 1.0 - (unique.len() as f64 / lines.len() as f64);
-    if dup_ratio > 0.5 { 0.2 }
-    else { 1.0 - dup_ratio }
+    if dup_ratio > 0.5 {
+        0.2
+    } else {
+        1.0 - dup_ratio
+    }
 }
 
 /// Character-level Shannon entropy. Low = repetitive, high = random/binary.
 fn score_entropy(text: &str) -> f64 {
-    if text.is_empty() { return 0.0; }
+    if text.is_empty() {
+        return 0.0;
+    }
     let mut counts = [0u32; 256];
     for &b in text.as_bytes() {
         counts[b as usize] += 1;
     }
     let len = text.len() as f64;
-    let entropy: f64 = counts.iter()
+    let entropy: f64 = counts
+        .iter()
         .filter(|&&c| c > 0)
         .map(|&c| {
             let p = c as f64 / len;
@@ -542,9 +590,13 @@ fn score_entropy(text: &str) -> f64 {
         })
         .sum();
     let e = entropy / std::f64::consts::LN_2; // bits
-    if e < 2.0 { 0.2 }
-    else if e > 6.5 { 0.3 }
-    else { 1.0 }
+    if e < 2.0 {
+        0.2
+    } else if e > 6.5 {
+        0.3
+    } else {
+        1.0
+    }
 }
 
 #[cfg(test)]
