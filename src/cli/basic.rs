@@ -233,8 +233,7 @@ pub(crate) fn cmd_mix(
     seed: u64,
     max_rows: usize,
 ) -> crate::Result<()> {
-    use rand::rngs::StdRng;
-    use rand::SeedableRng;
+    use rand::{rngs::StdRng, SeedableRng};
 
     if inputs.is_empty() {
         return Err(crate::Error::invalid_config("No input files provided"));
@@ -367,8 +366,9 @@ pub(crate) fn cmd_dedup(
 
 /// Auto-detect text column and create Unique transform for it.
 fn detect_text_column_dedup(dataset: &ArrowDataset) -> crate::transform::Unique {
-    use crate::transform::Unique;
     use arrow::datatypes::DataType;
+
+    use crate::transform::Unique;
 
     let schema = dataset.schema();
     for name in &["text", "content", "code", "source"] {
@@ -470,8 +470,10 @@ impl TextQualityFilter {
 
 impl crate::transform::Transform for TextQualityFilter {
     fn apply(&self, batch: arrow::array::RecordBatch) -> crate::Result<arrow::array::RecordBatch> {
-        use arrow::array::{Array, BooleanArray, StringArray};
-        use arrow::compute::filter_record_batch;
+        use arrow::{
+            array::{Array, BooleanArray, StringArray},
+            compute::filter_record_batch,
+        };
 
         let schema = batch.schema();
         let col_idx = schema

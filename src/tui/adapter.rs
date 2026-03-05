@@ -5,14 +5,14 @@
 
 use std::sync::Arc;
 
-use arrow::array::RecordBatch;
-use arrow::datatypes::{Schema, SchemaRef};
+use arrow::{
+    array::RecordBatch,
+    datatypes::{Schema, SchemaRef},
+};
 use unicode_width::UnicodeWidthStr;
 
-use super::error::TuiResult;
-use super::format::format_array_value;
-use crate::dataset::ArrowDataset;
-use crate::Dataset;
+use super::{error::TuiResult, format::format_array_value};
+use crate::{dataset::ArrowDataset, Dataset};
 
 /// Threshold for switching from in-memory to streaming mode (rows)
 const STREAMING_THRESHOLD: usize = 100_000;
@@ -598,9 +598,12 @@ impl StreamingAdapter {
 
 #[cfg(test)]
 mod tests {
+    use arrow::{
+        array::{Float32Array, Int32Array, StringArray},
+        datatypes::{DataType, Field},
+    };
+
     use super::*;
-    use arrow::array::{Float32Array, Int32Array, StringArray};
-    use arrow::datatypes::{DataType, Field};
 
     fn create_test_schema() -> SchemaRef {
         Arc::new(Schema::new(vec![

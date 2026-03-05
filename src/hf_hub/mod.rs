@@ -27,8 +27,12 @@ pub mod validation;
 mod tests;
 
 // Re-export download types
+// Internal re-exports for tests
+#[cfg(test)]
+pub(crate) use download::default_cache_dir;
 pub use download::{list_dataset_files, DatasetInfo, HfDataset, HfDatasetBuilder};
-
+#[cfg(test)]
+pub(crate) use upload::HF_API_URL;
 // Re-export upload types
 #[cfg(feature = "hf-hub")]
 pub use upload::{
@@ -36,15 +40,8 @@ pub use upload::{
     build_ndjson_upload_payload, compute_sha256, is_binary_file,
 };
 pub use upload::{HfPublisher, HfPublisherBuilder};
-
 // Re-export validation types
 pub use validation::{
     DatasetCardValidator, ValidationError, VALID_LICENSES, VALID_SIZE_CATEGORIES,
     VALID_TASK_CATEGORIES,
 };
-
-// Internal re-exports for tests
-#[cfg(test)]
-pub(crate) use download::default_cache_dir;
-#[cfg(test)]
-pub(crate) use upload::HF_API_URL;

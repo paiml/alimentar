@@ -61,7 +61,8 @@ enum Commands {
     },
     /// Mix multiple datasets with weighted sampling
     Mix {
-        /// Input files with optional weights (file:weight, e.g., "data.parquet:0.8")
+        /// Input files with optional weights (file:weight, e.g.,
+        /// "data.parquet:0.8")
         #[arg(required = true)]
         inputs: Vec<String>,
         /// Output file path
@@ -480,8 +481,7 @@ fn cmd_doctest_extract(
 
 #[cfg(feature = "doctest")]
 fn cmd_doctest_merge(inputs: &[PathBuf], output: &std::path::Path) -> crate::Result<()> {
-    use crate::dataset::Dataset;
-    use crate::ArrowDataset;
+    use crate::{dataset::Dataset, ArrowDataset};
 
     if inputs.is_empty() {
         return Err(crate::Error::invalid_config("No input files provided"));

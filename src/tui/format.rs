@@ -2,13 +2,16 @@
 //!
 //! Provides safe formatting of Arrow array values to display strings.
 
-use arrow::array::{
-    Array, BinaryArray, BooleanArray, Date32Array, Date64Array, Float32Array, Float64Array,
-    Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, LargeStringArray, StringArray,
-    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
-    TimestampSecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+use arrow::{
+    array::{
+        Array, BinaryArray, BooleanArray, Date32Array, Date64Array, Float32Array, Float64Array,
+        Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, LargeStringArray,
+        StringArray, TimestampMicrosecondArray, TimestampMillisecondArray,
+        TimestampNanosecondArray, TimestampSecondArray, UInt16Array, UInt32Array, UInt64Array,
+        UInt8Array,
+    },
+    datatypes::DataType,
 };
-use arrow::datatypes::DataType;
 
 use super::error::TuiResult;
 
@@ -321,14 +324,16 @@ pub fn display_width(s: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::Arc;
+
     use arrow::array::{
         ArrayRef, BinaryArray, BooleanArray, Date32Array, Date64Array, Float32Array, Float64Array,
         Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray, LargeStringArray,
         NullArray, StringArray, TimestampMillisecondArray, UInt16Array, UInt32Array, UInt64Array,
         UInt8Array,
     };
-    use std::sync::Arc;
+
+    use super::*;
 
     fn make_string_array(values: Vec<Option<&str>>) -> ArrayRef {
         Arc::new(StringArray::from(values))
@@ -798,9 +803,7 @@ mod tests {
     #[test]
     fn f_format_unsupported_type() {
         // Test with an unsupported type that should show placeholder
-        use arrow::array::ListArray;
-        use arrow::buffer::OffsetBuffer;
-        use arrow::datatypes::Field;
+        use arrow::{array::ListArray, buffer::OffsetBuffer, datatypes::Field};
 
         let values = Int32Array::from(vec![1, 2, 3, 4, 5]);
         let offsets = OffsetBuffer::new(vec![0, 2, 5].into());

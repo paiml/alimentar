@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 
+use super::basic::load_dataset;
 use crate::{
     federated::{
         FederatedSplitCoordinator, FederatedSplitStrategy, NodeSplitInstruction, NodeSplitManifest,
@@ -11,8 +12,6 @@ use crate::{
     split::DatasetSplit,
     Dataset,
 };
-
-use super::basic::load_dataset;
 
 /// Federated split coordination commands.
 #[derive(Subcommand)]
@@ -409,9 +408,8 @@ mod tests {
         datatypes::{DataType, Field, Schema},
     };
 
-    use crate::ArrowDataset;
-
     use super::*;
+    use crate::ArrowDataset;
 
     fn create_test_parquet(path: &PathBuf, rows: usize) {
         let schema = Arc::new(Schema::new(vec![

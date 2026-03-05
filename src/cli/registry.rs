@@ -4,13 +4,12 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 
+use super::basic::load_dataset;
 use crate::{
     backend::LocalBackend,
     registry::{DatasetMetadata, Registry},
     Dataset,
 };
-
-use super::basic::load_dataset;
 
 /// Registry commands for dataset sharing and discovery.
 #[derive(Subcommand)]
@@ -328,9 +327,8 @@ mod tests {
         datatypes::{DataType, Field, Schema},
     };
 
-    use crate::ArrowDataset;
-
     use super::*;
+    use crate::ArrowDataset;
 
     fn create_test_parquet(path: &PathBuf, rows: usize) {
         let schema = Arc::new(Schema::new(vec![

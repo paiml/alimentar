@@ -345,10 +345,7 @@ fn group_by_label(label_array: &Arc<dyn Array>) -> Result<HashMap<i64, Vec<usize
 }
 
 /// Downcast a label array to a concrete Arrow array type
-fn downcast_label<'a, T: 'static>(
-    array: &'a Arc<dyn Array>,
-    type_name: &str,
-) -> Result<&'a T> {
+fn downcast_label<'a, T: 'static>(array: &'a Arc<dyn Array>, type_name: &str) -> Result<&'a T> {
     array
         .as_any()
         .downcast_ref::<T>()
@@ -360,8 +357,7 @@ fn collect_groups<V, F>(
     iter: impl Iterator<Item = Option<V>>,
     groups: &mut HashMap<i64, Vec<usize>>,
     to_i64: F,
-)
-where
+) where
     F: Fn(V) -> i64,
 {
     for (i, val) in iter.enumerate() {

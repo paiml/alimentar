@@ -2,8 +2,7 @@
 //!
 //! Provides an expanded view of all fields in a single row.
 
-use super::adapter::DatasetAdapter;
-use super::scroll::ScrollState;
+use super::{adapter::DatasetAdapter, scroll::ScrollState};
 
 /// Row detail view widget for displaying a single record
 ///
@@ -229,11 +228,14 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use arrow::array::RecordBatch;
-    use arrow::array::{Float32Array, Int32Array, StringArray};
-    use arrow::datatypes::{DataType, Field, Schema};
     use std::sync::Arc;
+
+    use arrow::{
+        array::{Float32Array, Int32Array, RecordBatch, StringArray},
+        datatypes::{DataType, Field, Schema},
+    };
+
+    use super::*;
 
     fn create_test_adapter() -> DatasetAdapter {
         let schema = Arc::new(Schema::new(vec![

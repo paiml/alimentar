@@ -1,16 +1,15 @@
 //! TUI view commands for interactive dataset viewing.
 
-use std::io::Write;
-use std::path::PathBuf;
-
-use crate::tui::{DatasetAdapter, DatasetViewer};
+use std::{io::Write, path::PathBuf};
 
 use super::basic::load_dataset;
+use crate::tui::{DatasetAdapter, DatasetViewer};
 
 /// Interactive TUI viewer for datasets.
 pub(crate) fn cmd_view(path: &PathBuf, initial_search: Option<&str>) -> crate::Result<()> {
-    use crossterm::{cursor, execute, terminal};
     use std::io::stdout;
+
+    use crossterm::{cursor, execute, terminal};
 
     let dataset = load_dataset(path)?;
     let adapter = DatasetAdapter::from_dataset(&dataset)
@@ -63,7 +62,11 @@ fn render_frame<W: Write>(
         " {} | {} rows | {}",
         path.file_name().unwrap_or_default().to_string_lossy(),
         viewer.row_count(),
-        if viewer.adapter().is_streaming() { "Streaming" } else { "InMemory" }
+        if viewer.adapter().is_streaming() {
+            "Streaming"
+        } else {
+            "InMemory"
+        }
     );
     execute!(
         stdout,

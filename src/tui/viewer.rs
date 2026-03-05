@@ -2,9 +2,7 @@
 //!
 //! Provides a scrollable table view of Arrow datasets.
 
-use super::adapter::DatasetAdapter;
-use super::format::truncate_string;
-use super::scroll::ScrollState;
+use super::{adapter::DatasetAdapter, format::truncate_string, scroll::ScrollState};
 
 /// A scrollable table view for displaying Arrow datasets
 ///
@@ -314,11 +312,14 @@ impl DatasetViewer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use arrow::array::RecordBatch;
-    use arrow::array::{Float32Array, Int32Array, StringArray};
-    use arrow::datatypes::{DataType, Field, Schema};
     use std::sync::Arc;
+
+    use arrow::{
+        array::{Float32Array, Int32Array, RecordBatch, StringArray},
+        datatypes::{DataType, Field, Schema},
+    };
+
+    use super::*;
 
     fn create_test_adapter(rows: usize) -> DatasetAdapter {
         let schema = Arc::new(Schema::new(vec![

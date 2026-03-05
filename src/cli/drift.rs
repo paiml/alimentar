@@ -4,13 +4,12 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 
+use super::basic::load_dataset;
 use crate::{
     drift::{DriftDetector, DriftSeverity, DriftTest},
     sketch::{DataSketch, DistributedDriftDetector, SketchType},
     Dataset,
 };
-
-use super::basic::load_dataset;
 
 /// Drift detection commands.
 #[derive(Subcommand)]
@@ -488,9 +487,8 @@ mod tests {
         datatypes::{DataType, Field, Schema},
     };
 
-    use crate::ArrowDataset;
-
     use super::*;
+    use crate::ArrowDataset;
 
     fn create_test_parquet(path: &PathBuf, rows: usize) {
         let schema = Arc::new(Schema::new(vec![

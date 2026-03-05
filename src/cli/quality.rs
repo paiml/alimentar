@@ -4,9 +4,8 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 
-use crate::quality::{ColumnQuality, QualityChecker};
-
 use super::basic::load_dataset;
+use crate::quality::{ColumnQuality, QualityChecker};
 
 /// Quality checking commands.
 #[derive(Subcommand)]
@@ -274,9 +273,18 @@ fn print_severity_breakdown(score: &crate::quality::QualityScore) {
     use crate::quality::Severity;
 
     println!("Severity Breakdown:");
-    for severity in [Severity::Critical, Severity::High, Severity::Medium, Severity::Low] {
+    for severity in [
+        Severity::Critical,
+        Severity::High,
+        Severity::Medium,
+        Severity::Low,
+    ] {
         if let Some(stats) = score.severity_breakdown.get(&severity) {
-            let status = if stats.failed == 0 { "\u{2713}" } else { "\u{2717}" };
+            let status = if stats.failed == 0 {
+                "\u{2713}"
+            } else {
+                "\u{2717}"
+            };
             println!(
                 "  {} {:8}: {}/{} passed ({:.1}/{:.1} pts)",
                 status,
@@ -641,9 +649,8 @@ mod tests {
         datatypes::{DataType, Field, Schema},
     };
 
-    use crate::ArrowDataset;
-
     use super::*;
+    use crate::ArrowDataset;
 
     fn create_test_parquet(path: &PathBuf, rows: usize) {
         let schema = Arc::new(Schema::new(vec![
