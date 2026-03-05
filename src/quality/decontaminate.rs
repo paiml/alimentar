@@ -203,9 +203,8 @@ mod tests {
             "def sort_list(lst): return sorted(lst)",
             "def reverse_string(s): return s[::-1]",
         ];
-        let reference = vec![
-            "def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)",
-        ];
+        let reference =
+            vec!["def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)"];
 
         let report = check_contamination(&training, &reference, 10, 0.5);
         assert_eq!(report.contaminated_count, 0);
@@ -230,7 +229,8 @@ mod tests {
 
     #[test]
     fn test_check_contamination_threshold() {
-        let training = vec!["def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)"];
+        let training =
+            vec!["def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)"];
         let reference = vec!["def fibonacci(n): return n if n < 2 else fib(n-1) + fib(n-2)"];
 
         // Strict threshold should catch partial overlap
