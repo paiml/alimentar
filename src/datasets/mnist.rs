@@ -164,15 +164,21 @@ fn set_pixel(img: &mut [f32], x: usize, y: usize, val: f32) {
 }
 
 fn draw_oval(img: &mut [f32]) {
-    for y in 6..22 {
-        for x in 8..20 {
-            if (y == 6 || y == 21) && x > 9 && x < 18 {
-                set_pixel(img, x, y, 1.0);
-            }
-            if (x == 8 || x == 19) && y > 7 && y < 20 {
-                set_pixel(img, x, y, 1.0);
-            }
-        }
+    draw_oval_top_bottom(img);
+    draw_oval_sides(img);
+}
+
+fn draw_oval_top_bottom(img: &mut [f32]) {
+    for x in 10..18 {
+        set_pixel(img, x, 6, 1.0);
+        set_pixel(img, x, 21, 1.0);
+    }
+}
+
+fn draw_oval_sides(img: &mut [f32]) {
+    for y in 8..20 {
+        set_pixel(img, 8, y, 1.0);
+        set_pixel(img, 19, y, 1.0);
     }
 }
 

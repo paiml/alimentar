@@ -516,39 +516,7 @@ where
     let file = File::create(path).map_err(|e| Error::io(e, path))?;
     let mut writer = BufWriter::new(file);
 
-    // Collect all batches and build chunks
-    let mut chunks: Vec<(ChunkEntry, Vec<u8>)> = Vec::new();
-    let mut current_rows: Vec<RecordBatch> = Vec::new();
-    let mut current_row_count = 0usize;
-    let mut total_row_offset = 0u64;
-    let mut byte_offset = 0u64;
-
-    for batch in batches {
-        current_rows.push(batch.clone());
-        current_row_count += batch.num_rows();
-
-        while current_row_count >= chunk_size {
-            // Build chunk from accumulated rows
-            let (chunk_batch, remaining) = split_batches(&current_rows, chunk_size, schema)?;
-            let (entry, data) =
-                build_chunk(&chunk_batch, total_row_offset, byte_offset, compression)?;
-
-            total_row_offset += u64::from(entry.num_rows);
-            byte_offset += u64::from(entry.compressed_size);
-
-            chunks.push((entry, data));
-
-            current_rows = remaining;
-            current_row_count = current_rows.iter().map(RecordBatch::num_rows).sum();
-        }
-    }
-
-    // Handle remaining rows
-    if !current_rows.is_empty() {
-        let chunk_batch = concat_batches_vec(&current_rows, schema)?;
-        let (entry, data) = build_chunk(&chunk_batch, total_row_offset, byte_offset, compression)?;
-        chunks.push((entry, data));
-    }
+    let chunks = collect_chunks(batches, schema, chunk_size, compression)?;
 
     // Build chunk index
     let index = ChunkIndex::from_entries(chunks.iter().map(|(e, _)| e.clone()).collect());
@@ -603,6 +571,50 @@ where
     writer.flush().map_err(|e| Error::io(e, path))?;
 
     Ok(())
+}
+
+/// Collect all batches into compressed chunks
+fn collect_chunks<I>(
+    batches: I,
+    schema: &SchemaRef,
+    chunk_size: usize,
+    compression: Compression,
+) -> Result<Vec<(ChunkEntry, Vec<u8>)>>
+where
+    I: Iterator<Item = RecordBatch>,
+{
+    let mut chunks: Vec<(ChunkEntry, Vec<u8>)> = Vec::new();
+    let mut current_rows: Vec<RecordBatch> = Vec::new();
+    let mut current_row_count = 0usize;
+    let mut total_row_offset = 0u64;
+    let mut byte_offset = 0u64;
+
+    for batch in batches {
+        current_rows.push(batch.clone());
+        current_row_count += batch.num_rows();
+
+        while current_row_count >= chunk_size {
+            let (chunk_batch, remaining) = split_batches(&current_rows, chunk_size, schema)?;
+            let (entry, data) =
+                build_chunk(&chunk_batch, total_row_offset, byte_offset, compression)?;
+
+            total_row_offset += u64::from(entry.num_rows);
+            byte_offset += u64::from(entry.compressed_size);
+
+            chunks.push((entry, data));
+
+            current_rows = remaining;
+            current_row_count = current_rows.iter().map(RecordBatch::num_rows).sum();
+        }
+    }
+
+    if !current_rows.is_empty() {
+        let chunk_batch = concat_batches_vec(&current_rows, schema)?;
+        let (entry, data) = build_chunk(&chunk_batch, total_row_offset, byte_offset, compression)?;
+        chunks.push((entry, data));
+    }
+
+    Ok(chunks)
 }
 
 /// Build a chunk from a record batch

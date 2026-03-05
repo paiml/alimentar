@@ -702,23 +702,68 @@ fn jensen_shannon_test(reference: &[f64], current: &[f64]) -> Result<TestResult>
     })
 }
 
-/// Collect all numeric column data from a dataset
-fn collect_dataset_data(dataset: &ArrowDataset) -> HashMap<String, Vec<f64>> {
+/// Extract non-null f64 values from a numeric Arrow array into the output vector.
+fn extract_numeric_values(
+    array: &dyn arrow::array::Array,
+    data_type: &arrow::datatypes::DataType,
+    out: &mut Vec<f64>,
+) {
     use arrow::{
         array::{Array, Float64Array, Int32Array, Int64Array},
         datatypes::DataType,
     };
+
+    match data_type {
+        DataType::Float64 => {
+            if let Some(arr) = array.as_any().downcast_ref::<Float64Array>() {
+                out.extend((0..arr.len()).filter(|&i| !arr.is_null(i)).map(|i| arr.value(i)));
+            }
+        }
+        DataType::Float32 => {
+            if let Some(arr) = array.as_any().downcast_ref::<arrow::array::Float32Array>() {
+                out.extend(
+                    (0..arr.len())
+                        .filter(|&i| !arr.is_null(i))
+                        .map(|i| f64::from(arr.value(i))),
+                );
+            }
+        }
+        DataType::Int32 => {
+            if let Some(arr) = array.as_any().downcast_ref::<Int32Array>() {
+                out.extend(
+                    (0..arr.len())
+                        .filter(|&i| !arr.is_null(i))
+                        .map(|i| f64::from(arr.value(i))),
+                );
+            }
+        }
+        DataType::Int64 => {
+            if let Some(arr) = array.as_any().downcast_ref::<Int64Array>() {
+                out.extend(
+                    (0..arr.len())
+                        .filter(|&i| !arr.is_null(i))
+                        .map(|i| arr.value(i) as f64),
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Collect all numeric column data from a dataset
+fn collect_dataset_data(dataset: &ArrowDataset) -> HashMap<String, Vec<f64>> {
+    use arrow::datatypes::DataType;
 
     let mut data: HashMap<String, Vec<f64>> = HashMap::new();
     let schema = dataset.schema();
 
     // Initialize vectors for each numeric column
     for field in schema.fields() {
-        match field.data_type() {
-            DataType::Int32 | DataType::Int64 | DataType::Float64 | DataType::Float32 => {
-                data.insert(field.name().clone(), Vec::new());
-            }
-            _ => {}
+        if matches!(
+            field.data_type(),
+            DataType::Int32 | DataType::Int64 | DataType::Float64 | DataType::Float32
+        ) {
+            data.insert(field.name().clone(), Vec::new());
         }
     }
 
@@ -726,48 +771,7 @@ fn collect_dataset_data(dataset: &ArrowDataset) -> HashMap<String, Vec<f64>> {
     for batch in dataset.iter() {
         for (col_idx, field) in schema.fields().iter().enumerate() {
             if let Some(col_data) = data.get_mut(field.name()) {
-                let array = batch.column(col_idx);
-                match field.data_type() {
-                    DataType::Float64 => {
-                        if let Some(arr) = array.as_any().downcast_ref::<Float64Array>() {
-                            for i in 0..arr.len() {
-                                if !arr.is_null(i) {
-                                    col_data.push(arr.value(i));
-                                }
-                            }
-                        }
-                    }
-                    DataType::Float32 => {
-                        if let Some(arr) =
-                            array.as_any().downcast_ref::<arrow::array::Float32Array>()
-                        {
-                            for i in 0..arr.len() {
-                                if !arr.is_null(i) {
-                                    col_data.push(f64::from(arr.value(i)));
-                                }
-                            }
-                        }
-                    }
-                    DataType::Int32 => {
-                        if let Some(arr) = array.as_any().downcast_ref::<Int32Array>() {
-                            for i in 0..arr.len() {
-                                if !arr.is_null(i) {
-                                    col_data.push(f64::from(arr.value(i)));
-                                }
-                            }
-                        }
-                    }
-                    DataType::Int64 => {
-                        if let Some(arr) = array.as_any().downcast_ref::<Int64Array>() {
-                            for i in 0..arr.len() {
-                                if !arr.is_null(i) {
-                                    col_data.push(arr.value(i) as f64);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+                extract_numeric_values(batch.column(col_idx), field.data_type(), col_data);
             }
         }
     }

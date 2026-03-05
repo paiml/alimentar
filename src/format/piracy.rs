@@ -385,29 +385,26 @@ fn collect_lsb_bits(batches: &[RecordBatch], col_idx: usize) -> Vec<bool> {
         if col_idx >= batch.num_columns() {
             continue;
         }
-
-        let col = batch.column(col_idx);
-
-        if let Some(f32_arr) = col.as_any().downcast_ref::<Float32Array>() {
-            for i in 0..f32_arr.len() {
-                if !f32_arr.is_null(i) {
-                    let val = f32_arr.value(i);
-                    let bits_repr = val.to_bits();
-                    bits.push(bits_repr & 1 == 1);
-                }
-            }
-        } else if let Some(f64_arr) = col.as_any().downcast_ref::<Float64Array>() {
-            for i in 0..f64_arr.len() {
-                if !f64_arr.is_null(i) {
-                    let val = f64_arr.value(i);
-                    let bits_repr = val.to_bits();
-                    bits.push(bits_repr & 1 == 1);
-                }
-            }
-        }
+        collect_column_lsb_bits(batch.column(col_idx), &mut bits);
     }
 
     bits
+}
+
+fn collect_column_lsb_bits(col: &dyn arrow::array::Array, bits: &mut Vec<bool>) {
+    if let Some(f32_arr) = col.as_any().downcast_ref::<Float32Array>() {
+        for i in 0..f32_arr.len() {
+            if !f32_arr.is_null(i) {
+                bits.push(f32_arr.value(i).to_bits() & 1 == 1);
+            }
+        }
+    } else if let Some(f64_arr) = col.as_any().downcast_ref::<Float64Array>() {
+        for i in 0..f64_arr.len() {
+            if !f64_arr.is_null(i) {
+                bits.push(f64_arr.value(i).to_bits() & 1 == 1);
+            }
+        }
+    }
 }
 
 fn shannon_entropy_bits(bits: &[bool]) -> f64 {
