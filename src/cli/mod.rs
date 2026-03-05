@@ -220,10 +220,26 @@ pub fn run() -> ExitCode {
             format,
             seed,
         } => basic::cmd_fim(&input, &output, &column, rate, &format, seed),
-        Commands::Dedup { input, output, column } =>
-            basic::cmd_dedup(&input, &output, column.as_deref()),
-        Commands::FilterText { input, output, column, min_score, min_length, max_length } =>
-            basic::cmd_filter_text(&input, &output, column.as_deref(), min_score, min_length, max_length),
+        Commands::Dedup {
+            input,
+            output,
+            column,
+        } => basic::cmd_dedup(&input, &output, column.as_deref()),
+        Commands::FilterText {
+            input,
+            output,
+            column,
+            min_score,
+            min_length,
+            max_length,
+        } => basic::cmd_filter_text(
+            &input,
+            &output,
+            column.as_deref(),
+            min_score,
+            min_length,
+            max_length,
+        ),
         Commands::View { path, search } => view::cmd_view(&path, search.as_deref()),
         Commands::Import { source } => match source {
             ImportSource::Local {

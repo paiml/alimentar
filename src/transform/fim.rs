@@ -12,8 +12,8 @@ use std::sync::Arc;
 use arrow::array::{Array, RecordBatch, StringArray};
 use rand::{Rng, SeedableRng};
 
-use crate::error::{Error, Result};
 use super::Transform;
+use crate::error::{Error, Result};
 
 /// FIM format variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,16 +219,13 @@ mod tests {
     use arrow::datatypes::{DataType, Field, Schema};
 
     fn create_code_batch() -> RecordBatch {
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("code", DataType::Utf8, false),
-        ]));
+        let schema = Arc::new(Schema::new(vec![Field::new("code", DataType::Utf8, false)]));
         let code = StringArray::from(vec![
             "def hello():\n    print('hello world')\n",
             "class Foo:\n    def bar(self):\n        return 42\n",
             "x = 1",
         ]);
-        RecordBatch::try_new(schema, vec![Arc::new(code)])
-            .expect("batch creation should succeed")
+        RecordBatch::try_new(schema, vec![Arc::new(code)]).expect("batch creation should succeed")
     }
 
     #[test]
@@ -255,9 +252,7 @@ mod tests {
     #[test]
     fn test_fim_transform_applies_to_batch() {
         let batch = create_code_batch();
-        let fim = Fim::new("code")
-            .with_rate(1.0)
-            .with_seed(42);
+        let fim = Fim::new("code").with_rate(1.0).with_seed(42);
         let result = fim.apply(batch);
         assert!(result.is_ok());
         let result = result.expect("should succeed");
@@ -278,9 +273,7 @@ mod tests {
     #[test]
     fn test_fim_rate_zero_leaves_unchanged() {
         let batch = create_code_batch();
-        let fim = Fim::new("code")
-            .with_rate(0.0)
-            .with_seed(42);
+        let fim = Fim::new("code").with_rate(0.0).with_seed(42);
         let result = fim.apply(batch.clone()).expect("should succeed");
         let original = batch
             .column(0)
@@ -304,8 +297,16 @@ mod tests {
         let fim2 = Fim::new("code").with_rate(1.0).with_seed(123);
         let r1 = fim1.apply(batch.clone()).expect("should succeed");
         let r2 = fim2.apply(batch).expect("should succeed");
-        let c1 = r1.column(0).as_any().downcast_ref::<StringArray>().expect("s");
-        let c2 = r2.column(0).as_any().downcast_ref::<StringArray>().expect("s");
+        let c1 = r1
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("s");
+        let c2 = r2
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("s");
         for i in 0..c1.len() {
             assert_eq!(c1.value(i), c2.value(i));
         }
@@ -361,7 +362,7 @@ mod tests {
 
     #[test]
     fn test_find_char_boundary_multibyte() {
-        let s = "héllo";  // é is 2 bytes
+        let s = "héllo"; // é is 2 bytes
         let boundary = find_char_boundary(s, 2);
         assert!(s.is_char_boundary(boundary));
     }

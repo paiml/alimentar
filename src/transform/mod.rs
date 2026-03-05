@@ -12,19 +12,19 @@ use arrow::{
 
 use crate::error::{Error, Result};
 
+#[cfg(feature = "shuffle")]
+mod fim;
 mod numeric;
 mod row_ops;
 mod selection;
-#[cfg(feature = "shuffle")]
-mod fim;
 
+#[cfg(feature = "shuffle")]
+pub use fim::{Fim, FimFormat, FimTokens};
 pub use numeric::{Cast, FillNull, FillStrategy, NormMethod, Normalize};
 #[cfg(feature = "shuffle")]
 pub use row_ops::{Sample, Shuffle};
 pub use row_ops::{Skip, Sort, SortOrder, Take, Unique};
 pub use selection::{Drop, Rename, Select};
-#[cfg(feature = "shuffle")]
-pub use fim::{Fim, FimFormat, FimTokens};
 
 /// A transform that can be applied to RecordBatches.
 ///

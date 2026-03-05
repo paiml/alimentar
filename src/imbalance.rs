@@ -505,19 +505,28 @@ fn group_rows_by_label(
     if let Some(arr) = label_array.as_any().downcast_ref::<Int64Array>() {
         for i in 0..n {
             if !arr.is_null(i) {
-                groups.entry(arr.value(i).to_string()).or_default().push(i as u32);
+                groups
+                    .entry(arr.value(i).to_string())
+                    .or_default()
+                    .push(i as u32);
             }
         }
     } else if let Some(arr) = label_array.as_any().downcast_ref::<Int32Array>() {
         for i in 0..n {
             if !arr.is_null(i) {
-                groups.entry(arr.value(i).to_string()).or_default().push(i as u32);
+                groups
+                    .entry(arr.value(i).to_string())
+                    .or_default()
+                    .push(i as u32);
             }
         }
     } else if let Some(arr) = label_array.as_any().downcast_ref::<StringArray>() {
         for i in 0..n {
             if !arr.is_null(i) {
-                groups.entry(arr.value(i).to_string()).or_default().push(i as u32);
+                groups
+                    .entry(arr.value(i).to_string())
+                    .or_default()
+                    .push(i as u32);
             }
         }
     } else {
@@ -580,7 +589,10 @@ pub fn resample(
 
     let batches: Vec<arrow::array::RecordBatch> = dataset.iter().collect();
     let batch = if batches.len() == 1 {
-        batches.into_iter().next().ok_or_else(|| Error::empty_dataset("empty"))?
+        batches
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::empty_dataset("empty"))?
     } else {
         arrow::compute::concat_batches(&dataset.schema(), &batches).map_err(Error::Arrow)?
     };
@@ -593,7 +605,11 @@ pub fn resample(
             Error::invalid_config(format!("Column '{label_column}' not found in schema"))
         })?;
 
-    let groups = group_rows_by_label(batch.column(col_idx).as_ref(), batch.num_rows(), label_column)?;
+    let groups = group_rows_by_label(
+        batch.column(col_idx).as_ref(),
+        batch.num_rows(),
+        label_column,
+    )?;
 
     if groups.is_empty() {
         return Err(Error::empty_dataset("No valid labels found for resampling"));
