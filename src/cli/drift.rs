@@ -1,6 +1,6 @@
 //! Drift detection CLI commands.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 
@@ -117,8 +117,8 @@ pub(crate) fn severity_symbol(severity: DriftSeverity) -> &'static str {
 
 /// Detect drift between reference and current datasets.
 pub(crate) fn cmd_drift_detect(
-    reference: &PathBuf,
-    current: &PathBuf,
+    reference: &Path,
+    current: &Path,
     tests_str: &str,
     alpha: f64,
     format: &str,
@@ -214,8 +214,8 @@ pub(crate) fn cmd_drift_detect(
 
 /// Generate a drift report summary.
 pub(crate) fn cmd_drift_report(
-    reference: &PathBuf,
-    current: &PathBuf,
+    reference: &Path,
+    current: &Path,
     output: Option<&PathBuf>,
 ) -> crate::Result<()> {
     let ref_dataset = load_dataset(reference)?;
@@ -277,8 +277,8 @@ pub(crate) fn parse_sketch_type(s: &str) -> Option<SketchType> {
 
 /// Create a sketch from a dataset for distributed drift detection.
 pub(crate) fn cmd_drift_sketch(
-    input: &PathBuf,
-    output: &PathBuf,
+    input: &Path,
+    output: &Path,
     sketch_type: &str,
     source: Option<&str>,
     format: &str,
@@ -322,7 +322,7 @@ pub(crate) fn cmd_drift_sketch(
 }
 
 /// Load a sketch from a file.
-pub(crate) fn load_sketch(path: &PathBuf) -> crate::Result<DataSketch> {
+pub(crate) fn load_sketch(path: &Path) -> crate::Result<DataSketch> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
@@ -342,7 +342,7 @@ pub(crate) fn load_sketch(path: &PathBuf) -> crate::Result<DataSketch> {
 /// Merge multiple sketches into one.
 pub(crate) fn cmd_drift_merge(
     sketches: &[PathBuf],
-    output: &PathBuf,
+    output: &Path,
     format: &str,
 ) -> crate::Result<()> {
     if sketches.is_empty() {
@@ -353,7 +353,7 @@ pub(crate) fn cmd_drift_merge(
 
     let loaded: Vec<DataSketch> = sketches
         .iter()
-        .map(load_sketch)
+        .map(|p| load_sketch(p))
         .collect::<Result<Vec<_>, _>>()?;
 
     let merged = DataSketch::merge(&loaded)?;
@@ -382,8 +382,8 @@ pub(crate) fn cmd_drift_merge(
 
 /// Compare two sketches for drift.
 pub(crate) fn cmd_drift_compare(
-    reference: &PathBuf,
-    current: &PathBuf,
+    reference: &Path,
+    current: &Path,
     threshold: f64,
     format: &str,
 ) -> crate::Result<()> {
@@ -490,7 +490,7 @@ mod tests {
     use super::*;
     use crate::ArrowDataset;
 
-    fn create_test_parquet(path: &PathBuf, rows: usize) {
+    fn create_test_parquet(path: &Path, rows: usize) {
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int32, false),
             Field::new("name", DataType::Utf8, false),
@@ -519,7 +519,7 @@ mod tests {
             .unwrap_or_else(|| panic!("Should write parquet"));
     }
 
-    fn create_test_float_parquet(path: &PathBuf, rows: usize) {
+    fn create_test_float_parquet(path: &Path, rows: usize) {
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int32, false),
             Field::new("value", DataType::Float64, false),

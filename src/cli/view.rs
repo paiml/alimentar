@@ -1,12 +1,12 @@
 //! TUI view commands for interactive dataset viewing.
 
-use std::{io::Write, path::PathBuf};
+use std::{io::Write, path::Path};
 
 use super::basic::load_dataset;
 use crate::tui::{DatasetAdapter, DatasetViewer};
 
 /// Interactive TUI viewer for datasets.
-pub(crate) fn cmd_view(path: &PathBuf, initial_search: Option<&str>) -> crate::Result<()> {
+pub(crate) fn cmd_view(path: &Path, initial_search: Option<&str>) -> crate::Result<()> {
     use std::io::stdout;
 
     use crossterm::{cursor, execute, terminal};

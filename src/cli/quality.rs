@@ -1,6 +1,6 @@
 //! Quality checking CLI commands.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 
@@ -59,7 +59,7 @@ pub enum QualityCommands {
 
 /// Check data quality of a dataset.
 pub(crate) fn cmd_quality_check(
-    path: &PathBuf,
+    path: &Path,
     null_threshold: f64,
     _duplicate_threshold: f64,
     detect_outliers: bool,
@@ -148,7 +148,7 @@ pub(crate) fn cmd_quality_check(
 }
 
 /// Generate a quality report.
-pub(crate) fn cmd_quality_report(path: &PathBuf, output: Option<&PathBuf>) -> crate::Result<()> {
+pub(crate) fn cmd_quality_report(path: &Path, output: Option<&Path>) -> crate::Result<()> {
     let dataset = load_dataset(path)?;
     let report = QualityChecker::new().check(&dataset)?;
 
@@ -188,7 +188,7 @@ pub(crate) fn cmd_quality_report(path: &PathBuf, output: Option<&PathBuf>) -> cr
 /// weighted scoring per Toyota Way Jidoka principles.
 #[allow(clippy::too_many_lines)]
 pub(crate) fn cmd_quality_score(
-    path: &PathBuf,
+    path: &Path,
     profile_name: &str,
     suggest: bool,
     json_output: bool,
@@ -233,7 +233,7 @@ pub(crate) fn cmd_quality_score(
 fn print_text_report(
     score: &crate::quality::QualityScore,
     profile: &crate::quality::QualityProfile,
-    path: &PathBuf,
+    path: &Path,
     suggest: bool,
 ) {
     let grade_symbol = match score.grade {

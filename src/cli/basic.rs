@@ -6,8 +6,13 @@ use arrow::util::pretty::print_batches;
 
 use crate::{ArrowDataset, Dataset};
 
+/// Weighted dataset inputs: each entry is (dataset, weight, display_name), plus
+/// total weight.
+#[cfg(feature = "shuffle")]
+type MixInputs = (Vec<(ArrowDataset, f64, String)>, f64);
+
 /// Load a dataset from a file path based on extension.
-pub(crate) fn load_dataset(path: &PathBuf) -> crate::Result<ArrowDataset> {
+pub(crate) fn load_dataset(path: &Path) -> crate::Result<ArrowDataset> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
@@ -19,7 +24,7 @@ pub(crate) fn load_dataset(path: &PathBuf) -> crate::Result<ArrowDataset> {
 }
 
 /// Save a dataset to a file path based on extension.
-pub(crate) fn save_dataset(dataset: &ArrowDataset, path: &PathBuf) -> crate::Result<()> {
+pub(crate) fn save_dataset(dataset: &ArrowDataset, path: &Path) -> crate::Result<()> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
@@ -42,7 +47,7 @@ pub(crate) fn get_format(path: &Path) -> &'static str {
 }
 
 /// Convert between data formats.
-pub(crate) fn cmd_convert(input: &PathBuf, output: &PathBuf) -> crate::Result<()> {
+pub(crate) fn cmd_convert(input: &Path, output: &Path) -> crate::Result<()> {
     // Load input (supports parquet, csv)
     let dataset = load_dataset(input)?;
 
@@ -60,7 +65,7 @@ pub(crate) fn cmd_convert(input: &PathBuf, output: &PathBuf) -> crate::Result<()
 }
 
 /// Display dataset information.
-pub(crate) fn cmd_info(path: &PathBuf) -> crate::Result<()> {
+pub(crate) fn cmd_info(path: &Path) -> crate::Result<()> {
     let dataset = load_dataset(path)?;
 
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
@@ -76,7 +81,7 @@ pub(crate) fn cmd_info(path: &PathBuf) -> crate::Result<()> {
 }
 
 /// Display first N rows of a dataset.
-pub(crate) fn cmd_head(path: &PathBuf, rows: usize) -> crate::Result<()> {
+pub(crate) fn cmd_head(path: &Path, rows: usize) -> crate::Result<()> {
     let dataset = load_dataset(path)?;
 
     if dataset.is_empty() {
@@ -115,7 +120,7 @@ pub(crate) fn cmd_head(path: &PathBuf, rows: usize) -> crate::Result<()> {
 }
 
 /// Display dataset schema.
-pub(crate) fn cmd_schema(path: &PathBuf) -> crate::Result<()> {
+pub(crate) fn cmd_schema(path: &Path) -> crate::Result<()> {
     let dataset = load_dataset(path)?;
     let schema = dataset.schema();
 
@@ -145,24 +150,24 @@ pub(crate) fn cmd_schema(path: &PathBuf) -> crate::Result<()> {
 
 /// Parse an input spec of the form "path" or "path:weight".
 #[cfg(feature = "shuffle")]
-fn parse_input_spec(spec: &str) -> crate::Result<(PathBuf, f64)> {
+fn parse_input_spec(spec: &str) -> (PathBuf, f64) {
     if let Some((path, weight_str)) = spec.rsplit_once(':') {
         // Check if the part after : is a valid float (not a Windows drive letter)
         if let Ok(weight) = weight_str.parse::<f64>() {
-            return Ok((PathBuf::from(path), weight));
+            return (PathBuf::from(path), weight);
         }
     }
-    Ok((PathBuf::from(spec), 1.0))
+    (PathBuf::from(spec), 1.0)
 }
 
 /// Load input datasets from specs.
 #[cfg(feature = "shuffle")]
-fn load_mix_inputs(inputs: &[String]) -> crate::Result<(Vec<(ArrowDataset, f64, String)>, f64)> {
+fn load_mix_inputs(inputs: &[String]) -> crate::Result<MixInputs> {
     let mut datasets = Vec::new();
     let mut total_weight = 0.0;
 
     for spec in inputs {
-        let (path, weight) = parse_input_spec(spec)?;
+        let (path, weight) = parse_input_spec(spec);
         if !path.exists() {
             return Err(crate::Error::io(
                 std::io::Error::new(std::io::ErrorKind::NotFound, "Input file not found"),
@@ -216,9 +221,9 @@ fn sample_dataset(
     let columns: Vec<arrow::array::ArrayRef> = (0..concatenated.num_columns())
         .map(|col_idx| {
             arrow::compute::take(concatenated.column(col_idx), &index_array, None)
-                .expect("take should succeed")
+                .map_err(|e| crate::Error::invalid_config(format!("Arrow take error: {e}")))
         })
-        .collect();
+        .collect::<crate::Result<Vec<_>>>()?;
 
     arrow::array::RecordBatch::try_new(schema, columns)
         .map_err(|e| crate::Error::invalid_config(format!("RecordBatch error: {e}")))
@@ -229,7 +234,7 @@ fn sample_dataset(
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 pub(crate) fn cmd_mix(
     inputs: &[String],
-    output: &PathBuf,
+    output: &Path,
     seed: u64,
     max_rows: usize,
 ) -> crate::Result<()> {
@@ -286,8 +291,8 @@ pub(crate) fn cmd_mix(
 
 #[cfg(feature = "shuffle")]
 pub(crate) fn cmd_fim(
-    input: &PathBuf,
-    output: &PathBuf,
+    input: &Path,
+    output: &Path,
     column: &str,
     rate: f64,
     format: &str,
@@ -328,11 +333,7 @@ pub(crate) fn cmd_fim(
 ///
 /// Uses SHA-256 content hashing for exact deduplication on the specified
 /// text column. Falls back to full-row deduplication if no column specified.
-pub(crate) fn cmd_dedup(
-    input: &PathBuf,
-    output: &PathBuf,
-    column: Option<&str>,
-) -> crate::Result<()> {
+pub(crate) fn cmd_dedup(input: &Path, output: &Path, column: Option<&str>) -> crate::Result<()> {
     use crate::transform::{Transform, Unique};
 
     let dataset = load_dataset(input)?;
@@ -387,8 +388,8 @@ fn detect_text_column_dedup(dataset: &ArrowDataset) -> crate::transform::Unique 
 /// Computes quality scores for each row and removes low-quality entries.
 /// Signals: line length, alphanumeric ratio, duplicate line ratio, entropy.
 pub(crate) fn cmd_filter_text(
-    input: &PathBuf,
-    output: &PathBuf,
+    input: &Path,
+    output: &Path,
     column: Option<&str>,
     min_score: f64,
     min_length: usize,
@@ -587,7 +588,7 @@ fn score_entropy(text: &str) -> f64 {
         .iter()
         .filter(|&&c| c > 0)
         .map(|&c| {
-            let p = c as f64 / len;
+            let p = f64::from(c) / len;
             -p * p.ln()
         })
         .sum();
@@ -628,7 +629,7 @@ mod tests {
 
     use super::*;
 
-    fn create_test_parquet(path: &PathBuf, rows: usize) {
+    fn create_test_parquet(path: &Path, rows: usize) {
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int32, false),
             Field::new("name", DataType::Utf8, false),

@@ -1,6 +1,6 @@
 //! Federated split coordination CLI commands.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 
@@ -114,8 +114,8 @@ pub(crate) fn parse_fed_strategy(
 
 /// Generate a manifest from local dataset.
 pub(crate) fn cmd_fed_manifest(
-    input: &PathBuf,
-    output: &PathBuf,
+    input: &Path,
+    output: &Path,
     node_id: &str,
     train_ratio: f64,
     seed: u64,
@@ -153,7 +153,7 @@ pub(crate) fn cmd_fed_manifest(
 }
 
 /// Load a manifest from a file.
-pub(crate) fn load_manifest(path: &PathBuf) -> crate::Result<NodeSplitManifest> {
+pub(crate) fn load_manifest(path: &Path) -> crate::Result<NodeSplitManifest> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
@@ -174,7 +174,7 @@ pub(crate) fn load_manifest(path: &PathBuf) -> crate::Result<NodeSplitManifest> 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_fed_plan(
     manifests: &[PathBuf],
-    output: &PathBuf,
+    output: &Path,
     strategy: &str,
     train_ratio: f64,
     seed: u64,
@@ -187,7 +187,7 @@ pub(crate) fn cmd_fed_plan(
 
     let loaded: Vec<NodeSplitManifest> = manifests
         .iter()
-        .map(load_manifest)
+        .map(|p| load_manifest(p))
         .collect::<Result<Vec<_>, _>>()?;
 
     let strategy =
@@ -224,7 +224,7 @@ pub(crate) fn cmd_fed_plan(
 }
 
 /// Load a split plan from a file.
-pub(crate) fn load_plan(path: &PathBuf) -> crate::Result<Vec<NodeSplitInstruction>> {
+pub(crate) fn load_plan(path: &Path) -> crate::Result<Vec<NodeSplitInstruction>> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match ext {
@@ -243,11 +243,11 @@ pub(crate) fn load_plan(path: &PathBuf) -> crate::Result<Vec<NodeSplitInstructio
 
 /// Execute local split based on plan.
 pub(crate) fn cmd_fed_split(
-    input: &PathBuf,
-    plan: &PathBuf,
+    input: &Path,
+    plan: &Path,
     node_id: &str,
-    train_output: &PathBuf,
-    test_output: &PathBuf,
+    train_output: &Path,
+    test_output: &Path,
     validation_output: Option<&PathBuf>,
 ) -> crate::Result<()> {
     let dataset = load_dataset(input)?;
@@ -297,7 +297,7 @@ pub(crate) fn cmd_fed_verify(manifests: &[PathBuf], format: &str) -> crate::Resu
 
     let loaded: Vec<NodeSplitManifest> = manifests
         .iter()
-        .map(load_manifest)
+        .map(|p| load_manifest(p))
         .collect::<Result<Vec<_>, _>>()?;
 
     let report = FederatedSplitCoordinator::verify_global_split(&loaded)?;
@@ -411,7 +411,7 @@ mod tests {
     use super::*;
     use crate::ArrowDataset;
 
-    fn create_test_parquet(path: &PathBuf, rows: usize) {
+    fn create_test_parquet(path: &Path, rows: usize) {
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int32, false),
             Field::new("name", DataType::Utf8, false),

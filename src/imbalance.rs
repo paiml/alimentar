@@ -552,22 +552,26 @@ fn balance_group_indices(
 
     let mut all_indices: Vec<u32> = Vec::new();
     for indices in groups.values() {
-        if indices.len() == target {
-            all_indices.extend_from_slice(indices);
-        } else if indices.len() < target {
-            all_indices.extend_from_slice(indices);
-            let mut extra: Vec<u32> = Vec::with_capacity(target - indices.len());
-            while extra.len() + indices.len() < target {
-                extra.extend_from_slice(indices);
+        match indices.len().cmp(&target) {
+            std::cmp::Ordering::Equal => {
+                all_indices.extend_from_slice(indices);
             }
-            extra.truncate(target - indices.len());
-            extra.shuffle(rng);
-            all_indices.extend(extra);
-        } else {
-            let mut sampled = indices.clone();
-            sampled.shuffle(rng);
-            sampled.truncate(target);
-            all_indices.extend(sampled);
+            std::cmp::Ordering::Less => {
+                all_indices.extend_from_slice(indices);
+                let mut extra: Vec<u32> = Vec::with_capacity(target - indices.len());
+                while extra.len() + indices.len() < target {
+                    extra.extend_from_slice(indices);
+                }
+                extra.truncate(target - indices.len());
+                extra.shuffle(rng);
+                all_indices.extend(extra);
+            }
+            std::cmp::Ordering::Greater => {
+                let mut sampled = indices.clone();
+                sampled.shuffle(rng);
+                sampled.truncate(target);
+                all_indices.extend(sampled);
+            }
         }
     }
     all_indices.shuffle(rng);
