@@ -360,7 +360,7 @@ pub fn run() -> ExitCode {
                 &format,
             ),
             QualityCommands::Report { path, output } => {
-                quality::cmd_quality_report(&path, output.as_ref())
+                quality::cmd_quality_report(&path, output.as_deref())
             }
             QualityCommands::Score {
                 path,

@@ -1,6 +1,6 @@
 //! Registry CLI commands for dataset sharing and discovery.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 
@@ -93,7 +93,7 @@ pub enum RegistryCommands {
 }
 
 /// Create a registry with the given path.
-pub(crate) fn create_registry(path: &PathBuf) -> crate::Result<Registry> {
+pub(crate) fn create_registry(path: &Path) -> crate::Result<Registry> {
     // Ensure directory exists
     if !path.exists() {
         std::fs::create_dir_all(path).map_err(|e| crate::Error::io(e, path))?;
@@ -103,7 +103,7 @@ pub(crate) fn create_registry(path: &PathBuf) -> crate::Result<Registry> {
 }
 
 /// Initialize a new registry.
-pub(crate) fn cmd_registry_init(path: &PathBuf) -> crate::Result<()> {
+pub(crate) fn cmd_registry_init(path: &Path) -> crate::Result<()> {
     let registry = create_registry(path)?;
     registry.init()?;
     println!("Initialized registry at: {}", path.display());
@@ -111,7 +111,7 @@ pub(crate) fn cmd_registry_init(path: &PathBuf) -> crate::Result<()> {
 }
 
 /// List all datasets in a registry.
-pub(crate) fn cmd_registry_list(path: &PathBuf) -> crate::Result<()> {
+pub(crate) fn cmd_registry_list(path: &Path) -> crate::Result<()> {
     let registry = create_registry(path)?;
     let datasets = registry.list()?;
 
@@ -149,13 +149,13 @@ pub(crate) fn cmd_registry_list(path: &PathBuf) -> crate::Result<()> {
 /// Push (publish) a dataset to the registry.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_registry_push(
-    input: &PathBuf,
+    input: &Path,
     name: &str,
     version: &str,
     description: &str,
     license: &str,
     tags: &str,
-    registry_path: &PathBuf,
+    registry_path: &Path,
 ) -> crate::Result<()> {
     let registry = create_registry(registry_path)?;
 
@@ -198,9 +198,9 @@ pub(crate) fn cmd_registry_push(
 /// Pull (download) a dataset from the registry.
 pub(crate) fn cmd_registry_pull(
     name: &str,
-    output: &PathBuf,
+    output: &Path,
     version: Option<&str>,
-    registry_path: &PathBuf,
+    registry_path: &Path,
 ) -> crate::Result<()> {
     let registry = create_registry(registry_path)?;
 
@@ -223,7 +223,7 @@ pub(crate) fn cmd_registry_pull(
 }
 
 /// Search datasets by name or description.
-pub(crate) fn cmd_registry_search(query: &str, path: &PathBuf) -> crate::Result<()> {
+pub(crate) fn cmd_registry_search(query: &str, path: &Path) -> crate::Result<()> {
     let registry = create_registry(path)?;
     let results = registry.search(query)?;
 
@@ -252,7 +252,7 @@ pub(crate) fn cmd_registry_search(query: &str, path: &PathBuf) -> crate::Result<
 }
 
 /// Show detailed info about a specific dataset.
-pub(crate) fn cmd_registry_show_info(name: &str, path: &PathBuf) -> crate::Result<()> {
+pub(crate) fn cmd_registry_show_info(name: &str, path: &Path) -> crate::Result<()> {
     let registry = create_registry(path)?;
     let info = registry.get_info(name)?;
 
@@ -295,7 +295,7 @@ pub(crate) fn cmd_registry_show_info(name: &str, path: &PathBuf) -> crate::Resul
 }
 
 /// Delete a dataset version from the registry.
-pub(crate) fn cmd_registry_delete(name: &str, version: &str, path: &PathBuf) -> crate::Result<()> {
+pub(crate) fn cmd_registry_delete(name: &str, version: &str, path: &Path) -> crate::Result<()> {
     let registry = create_registry(path)?;
     registry.delete(name, version)?;
     println!("Deleted {}@{} from registry", name, version);
@@ -330,7 +330,7 @@ mod tests {
     use super::*;
     use crate::ArrowDataset;
 
-    fn create_test_parquet(path: &PathBuf, rows: usize) {
+    fn create_test_parquet(path: &Path, rows: usize) {
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int32, false),
             Field::new("name", DataType::Utf8, false),

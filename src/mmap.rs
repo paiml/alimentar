@@ -222,17 +222,12 @@ impl MmapDataset {
     }
 }
 
-impl Clone for MmapDataset {
-    fn clone(&self) -> Self {
-        // Re-open the file for the clone
-        // If opening fails, we panic since we can't recover
-        Self::open(&self.path).unwrap_or_else(|e| {
-            panic!(
-                "Failed to clone MmapDataset: could not re-open file {}: {}",
-                self.path.display(),
-                e
-            )
-        })
+impl MmapDataset {
+    /// Try to clone this dataset by re-opening the underlying file.
+    ///
+    /// This can fail if the file has been deleted or is no longer accessible.
+    pub fn try_clone(&self) -> crate::Result<Self> {
+        Self::open(&self.path)
     }
 }
 
@@ -544,7 +539,7 @@ mod tests {
         create_test_parquet(&path, 50);
 
         let dataset = MmapDataset::open(&path).unwrap();
-        let cloned = dataset.clone();
+        let cloned = dataset.try_clone().unwrap();
 
         assert_eq!(cloned.len(), dataset.len());
         assert_eq!(cloned.schema(), dataset.schema());
