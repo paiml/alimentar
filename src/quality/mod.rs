@@ -46,6 +46,7 @@
 #![allow(clippy::if_not_else)]
 
 mod checks;
+pub mod decontaminate;
 mod profiles;
 mod scoring;
 
@@ -62,4 +63,9 @@ pub use profiles::QualityProfile;
 pub use checks::{
     ColumnQuality, NumericStats, QualityChecker, QualityIssue, QualityReport, QualityThresholds,
     TextColumnStats,
+};
+
+// Re-export decontamination types
+pub use decontaminate::{
+    check_contamination, ngram_overlap, ContaminationResult, DecontaminationReport,
 };
