@@ -774,17 +774,15 @@ impl TextColumnStats {
         column: &str,
         preamble_prefix: Option<&str>,
     ) -> crate::Result<Self> {
-        use arrow::array::{Array, StringArray};
         use crate::Dataset;
+        use arrow::array::{Array, StringArray};
 
         let schema = dataset.schema();
         let col_idx = schema
             .fields()
             .iter()
             .position(|f| f.name() == column)
-            .ok_or_else(|| {
-                crate::Error::invalid_config(format!("Column '{column}' not found"))
-            })?;
+            .ok_or_else(|| crate::Error::invalid_config(format!("Column '{column}' not found")))?;
 
         let mut lengths: Vec<usize> = Vec::with_capacity(dataset.len());
         let mut empty_count = 0usize;
@@ -796,9 +794,7 @@ impl TextColumnStats {
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or_else(|| {
-                    crate::Error::invalid_config(format!(
-                        "Column '{column}' is not a string type"
-                    ))
+                    crate::Error::invalid_config(format!("Column '{column}' is not a string type"))
                 })?;
 
             for i in 0..str_arr.len() {
