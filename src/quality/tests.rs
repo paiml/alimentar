@@ -763,8 +763,10 @@ fn test_quality_profile_debug() {
 
 /// Helper to create a dataset with List<Struct> columns (like doctest corpus)
 fn make_nested_dataset() -> ArrowDataset {
-    use arrow::array::{ArrayRef, ListArray, StructArray};
-    use arrow::buffer::OffsetBuffer;
+    use arrow::{
+        array::{ArrayRef, ListArray, StructArray},
+        buffer::OffsetBuffer,
+    };
 
     // Schema with nested types
     let func_struct = DataType::Struct(

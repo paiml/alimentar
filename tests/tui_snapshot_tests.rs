@@ -6,9 +6,11 @@
 use std::sync::Arc;
 
 use alimentar::tui::{DatasetAdapter, DatasetViewer, RowDetailView, SchemaInspector, ScrollState};
-use arrow::array::{Float32Array, Int32Array, StringArray};
-use arrow::datatypes::{DataType, Field, Schema};
-use arrow::record_batch::RecordBatch;
+use arrow::{
+    array::{Float32Array, Int32Array, StringArray},
+    datatypes::{DataType, Field, Schema},
+    record_batch::RecordBatch,
+};
 
 // ============================================================================
 // Test Helpers

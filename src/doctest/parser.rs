@@ -355,15 +355,38 @@ const DOC_MARKERS: &[&str] = &[
 
 /// Common prose starters (stop words) - code output rarely starts with these
 const PROSE_STARTERS: &[&str] = &[
-    "The ", "This ", "Note:", "Warning:", "Example:", "Examples:", "See ", "If ", "When ", "For ",
-    "An ", "A ", "It ", "Returns ", "Raises ", "Args:", "Arguments:", "Parameters:", "By ",
-    "Use ", "Set ", "Get ", "You ", "We ", "They ",
+    "The ",
+    "This ",
+    "Note:",
+    "Warning:",
+    "Example:",
+    "Examples:",
+    "See ",
+    "If ",
+    "When ",
+    "For ",
+    "An ",
+    "A ",
+    "It ",
+    "Returns ",
+    "Raises ",
+    "Args:",
+    "Arguments:",
+    "Parameters:",
+    "By ",
+    "Use ",
+    "Set ",
+    "Get ",
+    "You ",
+    "We ",
+    "They ",
 ];
 
 /// Python literals that start with capital letters but are not prose
 const PYTHON_CONSTANTS: &[&str] = &["True", "False", "None", "Traceback"];
 
-/// Check if a word looks like a Python exception type (PascalCase Error/Exception/Warning).
+/// Check if a word looks like a Python exception type (PascalCase
+/// Error/Exception/Warning).
 fn is_python_exception_word(word: &str) -> bool {
     (word.ends_with("Error") || word.ends_with("Exception") || word.ends_with("Warning"))
         && word.len() > 7

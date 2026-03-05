@@ -702,7 +702,8 @@ fn jensen_shannon_test(reference: &[f64], current: &[f64]) -> Result<TestResult>
     })
 }
 
-/// Extract non-null f64 values from a numeric Arrow array into the output vector.
+/// Extract non-null f64 values from a numeric Arrow array into the output
+/// vector.
 fn extract_numeric_values(
     array: &dyn arrow::array::Array,
     data_type: &arrow::datatypes::DataType,
@@ -716,7 +717,11 @@ fn extract_numeric_values(
     match data_type {
         DataType::Float64 => {
             if let Some(arr) = array.as_any().downcast_ref::<Float64Array>() {
-                out.extend((0..arr.len()).filter(|&i| !arr.is_null(i)).map(|i| arr.value(i)));
+                out.extend(
+                    (0..arr.len())
+                        .filter(|&i| !arr.is_null(i))
+                        .map(|i| arr.value(i)),
+                );
             }
         }
         DataType::Float32 => {

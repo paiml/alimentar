@@ -2,8 +2,7 @@
 //!
 //! Displays field names, types, and nullable status in a table format.
 
-use super::adapter::DatasetAdapter;
-use super::format::truncate_string;
+use super::{adapter::DatasetAdapter, format::truncate_string};
 
 /// Schema inspector widget for displaying dataset schema
 ///
@@ -209,9 +208,11 @@ fn format_type_name(dt: &arrow::datatypes::DataType) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use arrow::datatypes::{DataType, Field, Schema};
     use std::sync::Arc;
+
+    use arrow::datatypes::{DataType, Field, Schema};
+
+    use super::*;
 
     fn create_test_adapter() -> DatasetAdapter {
         let schema = Arc::new(Schema::new(vec![

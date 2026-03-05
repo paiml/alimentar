@@ -215,8 +215,9 @@ impl Transform for Fim {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use arrow::datatypes::{DataType, Field, Schema};
+
+    use super::*;
 
     fn create_code_batch() -> RecordBatch {
         let schema = Arc::new(Schema::new(vec![Field::new("code", DataType::Utf8, false)]));

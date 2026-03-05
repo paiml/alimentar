@@ -540,7 +540,8 @@ fn group_rows_by_label(
 
 /// Balance group indices to a target count via oversampling or undersampling.
 ///
-/// Groups smaller than `target` are repeated; groups larger are randomly subsampled.
+/// Groups smaller than `target` are repeated; groups larger are randomly
+/// subsampled.
 #[cfg(feature = "shuffle")]
 fn balance_group_indices(
     groups: &std::collections::HashMap<String, Vec<u32>>,
@@ -638,7 +639,8 @@ pub fn resample(
 /// Compute sqrt-inverse class weights for weighted loss.
 ///
 /// Returns a vector of weights where `weights[i]` corresponds to class `i`.
-/// Weights are computed as `sqrt(N / (K * count_i))` and normalized to sum to K.
+/// Weights are computed as `sqrt(N / (K * count_i))` and normalized to sum to
+/// K.
 ///
 /// # Arguments
 /// * `class_counts` - Ordered counts per class (index = class label)

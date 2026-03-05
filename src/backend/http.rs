@@ -85,8 +85,9 @@ impl HttpResponse {
 
 /// Trait for HTTP client operations.
 ///
-/// This trait abstracts HTTP operations to allow for testing with mock implementations.
-/// The real implementation uses reqwest, while tests can use `MockHttpClient`.
+/// This trait abstracts HTTP operations to allow for testing with mock
+/// implementations. The real implementation uses reqwest, while tests can use
+/// `MockHttpClient`.
 pub trait HttpClient: Send + Sync {
     /// Performs an HTTP GET request.
     fn get(&self, url: &str) -> Result<HttpResponse>;

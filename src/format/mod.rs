@@ -42,7 +42,6 @@ pub mod signing;
 pub mod streaming;
 
 pub use crc::crc32;
-
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -754,9 +753,7 @@ fn compress_payload(payload: Vec<u8>, compression: Compression) -> Result<Vec<u8
     match compression {
         Compression::None => Ok(payload),
         Compression::ZstdL3 => zstd::encode_all(payload.as_slice(), 3).map_err(Error::io_no_path),
-        Compression::ZstdL19 => {
-            zstd::encode_all(payload.as_slice(), 19).map_err(Error::io_no_path)
-        }
+        Compression::ZstdL19 => zstd::encode_all(payload.as_slice(), 19).map_err(Error::io_no_path),
         Compression::Lz4 => {
             let mut encoder = lz4_flex::frame::FrameEncoder::new(Vec::new());
             std::io::Write::write_all(&mut encoder, &payload).map_err(Error::io_no_path)?;
@@ -992,7 +989,9 @@ fn parse_trailing_blocks(
         {
             let sig_end = trailing_offset + signing::SignatureBlock::SIZE;
             if sig_end > checksum_offset {
-                return Err(Error::Format("Signature block extends beyond data".to_string()));
+                return Err(Error::Format(
+                    "Signature block extends beyond data".to_string(),
+                ));
             }
 
             let sig_block =

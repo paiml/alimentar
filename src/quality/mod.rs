@@ -54,18 +54,15 @@ mod scoring;
 mod tests;
 
 // Re-export scoring types
-pub use scoring::{ChecklistItem, LetterGrade, QualityScore, Severity, SeverityStats};
-
-// Re-export profile types
-pub use profiles::QualityProfile;
-
 // Re-export check types
 pub use checks::{
     ColumnQuality, NumericStats, QualityChecker, QualityIssue, QualityReport, QualityThresholds,
     TextColumnStats,
 };
-
 // Re-export decontamination types
 pub use decontaminate::{
     check_contamination, ngram_overlap, ContaminationResult, DecontaminationReport,
 };
+// Re-export profile types
+pub use profiles::QualityProfile;
+pub use scoring::{ChecklistItem, LetterGrade, QualityScore, Severity, SeverityStats};

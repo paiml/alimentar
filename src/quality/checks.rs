@@ -1,6 +1,7 @@
 //! Quality Issues and Checker
 //!
-//! Types for representing data quality issues and the checker that detects them.
+//! Types for representing data quality issues and the checker that detects
+//! them.
 
 use std::collections::{HashMap, HashSet};
 
@@ -764,7 +765,8 @@ impl TextColumnStats {
     /// # Arguments
     /// * `dataset` - Source dataset
     /// * `column` - Name of the string column
-    /// * `preamble_prefix` - Optional prefix to count as "preamble" (e.g., "#!/")
+    /// * `preamble_prefix` - Optional prefix to count as "preamble" (e.g.,
+    ///   "#!/")
     ///
     /// # Errors
     /// Returns error if column not found or not a string type.
@@ -774,8 +776,9 @@ impl TextColumnStats {
         column: &str,
         preamble_prefix: Option<&str>,
     ) -> crate::Result<Self> {
-        use crate::Dataset;
         use arrow::array::{Array, StringArray};
+
+        use crate::Dataset;
 
         let schema = dataset.schema();
         let col_idx = schema
