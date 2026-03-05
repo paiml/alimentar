@@ -195,7 +195,7 @@ pub(crate) fn cmd_quality_score(
     json_output: bool,
     badge_output: bool,
 ) -> crate::Result<()> {
-    use crate::quality::{QualityProfile, QualityScore, Severity};
+    use crate::quality::{QualityProfile, QualityScore};
 
     // Load the quality profile
     let profile = QualityProfile::by_name(profile_name).ok_or_else(|| {
@@ -219,96 +219,7 @@ pub(crate) fn cmd_quality_score(
     } else if json_output {
         println!("{}", score.to_json());
     } else {
-        // Text output (Andon-style visual management)
-        let grade_symbol = match score.grade {
-            crate::quality::LetterGrade::A | crate::quality::LetterGrade::B => "\u{2713}",
-            crate::quality::LetterGrade::C => "\u{25CB}",
-            crate::quality::LetterGrade::D => "\u{25B3}",
-            crate::quality::LetterGrade::F => "\u{2717}",
-        };
-
-        println!("\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
-        println!(
-            "  Data Quality Score: {} {} ({:.1}%)  ",
-            grade_symbol, score.grade, score.score
-        );
-        println!("  Profile: {}  ", profile.name);
-        println!("  Decision: {}  ", score.grade.publication_decision());
-        println!("\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
-        println!();
-        println!("File: {}", path.display());
-        println!(
-            "Points: {:.1} / {:.1}",
-            score.points_earned, score.max_points
-        );
-        println!();
-
-        // Severity breakdown
-        println!("Severity Breakdown:");
-        for severity in [
-            Severity::Critical,
-            Severity::High,
-            Severity::Medium,
-            Severity::Low,
-        ] {
-            if let Some(stats) = score.severity_breakdown.get(&severity) {
-                let status = if stats.failed == 0 {
-                    "\u{2713}"
-                } else {
-                    "\u{2717}"
-                };
-                println!(
-                    "  {} {:8}: {}/{} passed ({:.1}/{:.1} pts)",
-                    status,
-                    format!("{}", severity),
-                    stats.passed,
-                    stats.total,
-                    stats.points_earned,
-                    stats.max_points
-                );
-            }
-        }
-        println!();
-
-        // Critical failures get highlighted
-        let critical_failures = score.critical_failures();
-        if !critical_failures.is_empty() {
-            println!("CRITICAL FAILURES (blocks publication):");
-            for item in critical_failures {
-                println!("  \u{2717} #{}: {}", item.id, item.description);
-                if suggest {
-                    if let Some(ref suggestion) = item.suggestion {
-                        println!("    \u{2192} {}", suggestion);
-                    }
-                }
-            }
-            println!();
-        }
-
-        // Show suggestions for all failed items if --suggest flag
-        if suggest {
-            let failed = score.failed_items();
-            let non_critical: Vec<_> = failed
-                .iter()
-                .filter(|i| i.severity != Severity::Critical)
-                .collect();
-
-            if !non_critical.is_empty() {
-                println!("Other Issues ({}):", non_critical.len());
-                for item in non_critical {
-                    let sev = match item.severity {
-                        Severity::High => "[HIGH]",
-                        Severity::Medium => "[MED]",
-                        Severity::Low => "[LOW]",
-                        Severity::Critical => "[CRIT]",
-                    };
-                    println!("  {} #{}: {}", sev, item.id, item.description);
-                    if let Some(ref suggestion) = item.suggestion {
-                        println!("      \u{2192} {}", suggestion);
-                    }
-                }
-            }
-        }
+        print_text_report(&score, &profile, path, suggest);
     }
 
     // Exit with non-zero code if critical failures (for CI/CD)
@@ -317,6 +228,111 @@ pub(crate) fn cmd_quality_score(
     }
 
     Ok(())
+}
+
+/// Print the text quality report (Andon-style visual management).
+fn print_text_report(
+    score: &crate::quality::QualityScore,
+    profile: &crate::quality::QualityProfile,
+    path: &PathBuf,
+    suggest: bool,
+) {
+    let grade_symbol = match score.grade {
+        crate::quality::LetterGrade::A | crate::quality::LetterGrade::B => "\u{2713}",
+        crate::quality::LetterGrade::C => "\u{25CB}",
+        crate::quality::LetterGrade::D => "\u{25B3}",
+        crate::quality::LetterGrade::F => "\u{2717}",
+    };
+
+    let separator = "\u{2550}".repeat(63);
+    println!("{separator}");
+    println!(
+        "  Data Quality Score: {} {} ({:.1}%)  ",
+        grade_symbol, score.grade, score.score
+    );
+    println!("  Profile: {}  ", profile.name);
+    println!("  Decision: {}  ", score.grade.publication_decision());
+    println!("{separator}");
+    println!();
+    println!("File: {}", path.display());
+    println!(
+        "Points: {:.1} / {:.1}",
+        score.points_earned, score.max_points
+    );
+    println!();
+
+    print_severity_breakdown(score);
+    print_critical_failures(score, suggest);
+
+    if suggest {
+        print_other_issues(score);
+    }
+}
+
+/// Print the severity breakdown section.
+fn print_severity_breakdown(score: &crate::quality::QualityScore) {
+    use crate::quality::Severity;
+
+    println!("Severity Breakdown:");
+    for severity in [Severity::Critical, Severity::High, Severity::Medium, Severity::Low] {
+        if let Some(stats) = score.severity_breakdown.get(&severity) {
+            let status = if stats.failed == 0 { "\u{2713}" } else { "\u{2717}" };
+            println!(
+                "  {} {:8}: {}/{} passed ({:.1}/{:.1} pts)",
+                status,
+                format!("{}", severity),
+                stats.passed,
+                stats.total,
+                stats.points_earned,
+                stats.max_points
+            );
+        }
+    }
+    println!();
+}
+
+/// Print critical failures section.
+fn print_critical_failures(score: &crate::quality::QualityScore, suggest: bool) {
+    let critical_failures = score.critical_failures();
+    if !critical_failures.is_empty() {
+        println!("CRITICAL FAILURES (blocks publication):");
+        for item in critical_failures {
+            println!("  \u{2717} #{}: {}", item.id, item.description);
+            if suggest {
+                if let Some(ref suggestion) = item.suggestion {
+                    println!("    \u{2192} {}", suggestion);
+                }
+            }
+        }
+        println!();
+    }
+}
+
+/// Print non-critical issues with suggestions.
+fn print_other_issues(score: &crate::quality::QualityScore) {
+    use crate::quality::Severity;
+
+    let failed = score.failed_items();
+    let non_critical: Vec<_> = failed
+        .iter()
+        .filter(|i| i.severity != Severity::Critical)
+        .collect();
+
+    if !non_critical.is_empty() {
+        println!("Other Issues ({}):", non_critical.len());
+        for item in non_critical {
+            let sev = match item.severity {
+                Severity::High => "[HIGH]",
+                Severity::Medium => "[MED]",
+                Severity::Low => "[LOW]",
+                Severity::Critical => "[CRIT]",
+            };
+            println!("  {} #{}: {}", sev, item.id, item.description);
+            if let Some(ref suggestion) = item.suggestion {
+                println!("      \u{2192} {}", suggestion);
+            }
+        }
+    }
 }
 
 /// List available quality profiles.

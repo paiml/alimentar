@@ -318,49 +318,21 @@ fn group_by_label(label_array: &Arc<dyn Array>) -> Result<HashMap<i64, Vec<usize
 
     match label_array.data_type() {
         DataType::Int32 => {
-            let arr = label_array
-                .as_any()
-                .downcast_ref::<Int32Array>()
-                .ok_or_else(|| Error::invalid_config("Failed to downcast Int32Array"))?;
-            for (i, val) in arr.iter().enumerate() {
-                if let Some(v) = val {
-                    groups.entry(i64::from(v)).or_default().push(i);
-                }
-            }
+            let arr = downcast_label::<Int32Array>(label_array, "Int32Array")?;
+            collect_groups(arr.iter(), &mut groups, i64::from);
         }
         DataType::Int64 => {
-            let arr = label_array
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .ok_or_else(|| Error::invalid_config("Failed to downcast Int64Array"))?;
-            for (i, val) in arr.iter().enumerate() {
-                if let Some(v) = val {
-                    groups.entry(v).or_default().push(i);
-                }
-            }
+            let arr = downcast_label::<Int64Array>(label_array, "Int64Array")?;
+            collect_groups(arr.iter(), &mut groups, |v| v);
         }
         DataType::UInt32 => {
-            let arr = label_array
-                .as_any()
-                .downcast_ref::<UInt32Array>()
-                .ok_or_else(|| Error::invalid_config("Failed to downcast UInt32Array"))?;
-            for (i, val) in arr.iter().enumerate() {
-                if let Some(v) = val {
-                    groups.entry(i64::from(v)).or_default().push(i);
-                }
-            }
+            let arr = downcast_label::<UInt32Array>(label_array, "UInt32Array")?;
+            collect_groups(arr.iter(), &mut groups, i64::from);
         }
         DataType::UInt64 => {
-            let arr = label_array
-                .as_any()
-                .downcast_ref::<UInt64Array>()
-                .ok_or_else(|| Error::invalid_config("Failed to downcast UInt64Array"))?;
-            for (i, val) in arr.iter().enumerate() {
-                if let Some(v) = val {
-                    // May truncate very large values
-                    groups.entry(v as i64).or_default().push(i);
-                }
-            }
+            let arr = downcast_label::<UInt64Array>(label_array, "UInt64Array")?;
+            // May truncate very large values
+            collect_groups(arr.iter(), &mut groups, |v| v as i64);
         }
         dt => {
             return Err(Error::invalid_config(format!(
@@ -370,6 +342,33 @@ fn group_by_label(label_array: &Arc<dyn Array>) -> Result<HashMap<i64, Vec<usize
     }
 
     Ok(groups)
+}
+
+/// Downcast a label array to a concrete Arrow array type
+fn downcast_label<'a, T: 'static>(
+    array: &'a Arc<dyn Array>,
+    type_name: &str,
+) -> Result<&'a T> {
+    array
+        .as_any()
+        .downcast_ref::<T>()
+        .ok_or_else(|| Error::invalid_config(format!("Failed to downcast {type_name}")))
+}
+
+/// Collect values from an Arrow array iterator into groups by label.
+fn collect_groups<V, F>(
+    iter: impl Iterator<Item = Option<V>>,
+    groups: &mut HashMap<i64, Vec<usize>>,
+    to_i64: F,
+)
+where
+    F: Fn(V) -> i64,
+{
+    for (i, val) in iter.enumerate() {
+        if let Some(v) = val {
+            groups.entry(to_i64(v)).or_default().push(i);
+        }
+    }
 }
 
 /// Take rows at given indices from a batch

@@ -58,7 +58,7 @@ pub(crate) fn cmd_import_local(
     println!("Importing {}...", input.display());
     let dataset = load_dataset(input)?;
 
-    // If format override given, create a temporary path with that extension
+    // Apply format override by using the target extension for save, then rename
     if let Some(fmt) = format {
         let forced_output = output.with_extension(fmt);
         save_dataset(&dataset, &forced_output)?;

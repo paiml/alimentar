@@ -75,28 +75,9 @@ fn run_interactive() -> Result<()> {
         let sig = line_editor.read_line(&prompt);
         match sig {
             Ok(Signal::Success(line)) => {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
+                if dispatch_line(&line, &mut session, &line_editor) {
+                    break;
                 }
-
-                session.add_history(trimmed);
-
-                match CommandParser::parse(trimmed) {
-                    Ok(cmd) => {
-                        if matches!(cmd, ReplCommand::Quit) {
-                            println!("Goodbye!");
-                            break;
-                        }
-                        if let Err(e) = session.execute(cmd) {
-                            eprintln!("Error: {e}");
-                        }
-                    }
-                    Err(e) => eprintln!("Parse error: {e}"),
-                }
-
-                // Update completer with new schema info
-                update_completer(&line_editor, &session);
             }
             Ok(Signal::CtrlC) => {
                 println!("^C");
@@ -113,6 +94,33 @@ fn run_interactive() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Parse and execute a single REPL line. Returns true if the REPL should exit.
+#[cfg(feature = "repl")]
+fn dispatch_line(line: &str, session: &mut ReplSession, editor: &Reedline) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    session.add_history(trimmed);
+
+    match CommandParser::parse(trimmed) {
+        Ok(cmd) => {
+            if matches!(cmd, ReplCommand::Quit) {
+                println!("Goodbye!");
+                return true;
+            }
+            if let Err(e) = session.execute(cmd) {
+                eprintln!("Error: {e}");
+            }
+        }
+        Err(e) => eprintln!("Parse error: {e}"),
+    }
+
+    update_completer(editor, session);
+    false
 }
 
 /// Run REPL in non-interactive mode (for testing and piped input)

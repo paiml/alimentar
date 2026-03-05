@@ -1,0 +1,193 @@
+{
+  "tree_hash": "a8ca33e7d732b1cd35877d543b582f4d4cd12e6d",
+  "pmat_version": "3.6.1",
+  "timestamp": "2026-03-05T20:01:05.550181415Z",
+  "report": {
+    "files_with_dead_code": [
+      {
+        "file_path": "src/doctest/parser.rs",
+        "dead_items": [
+          {
+            "name": "extract_from_docstring",
+            "kind": "Suppressed",
+            "line": 270,
+            "column": 1,
+            "message": "fn `extract_from_docstring` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.5270092226613966
+      },
+      {
+        "file_path": "src/serve/plugin.rs",
+        "dead_items": [
+          {
+            "name": "with_name",
+            "kind": "Suppressed",
+            "line": 284,
+            "column": 1,
+            "message": "fn `with_name` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "CoursePlugin",
+            "kind": "Suppressed",
+            "line": 399,
+            "column": 1,
+            "message": "struct `CoursePlugin` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "CourseContent",
+            "kind": "Suppressed",
+            "line": 500,
+            "column": 1,
+            "message": "struct `CourseContent` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "CourseOutline",
+            "kind": "Suppressed",
+            "line": 532,
+            "column": 1,
+            "message": "struct `CourseOutline` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "Week",
+            "kind": "Suppressed",
+            "line": 543,
+            "column": 1,
+            "message": "struct `Week` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "Lesson",
+            "kind": "Suppressed",
+            "line": 556,
+            "column": 1,
+            "message": "struct `Lesson` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "Asset",
+            "kind": "Suppressed",
+            "line": 569,
+            "column": 1,
+            "message": "struct `Asset` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "AssetType",
+            "kind": "Suppressed",
+            "line": 584,
+            "column": 1,
+            "message": "enum `AssetType` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "BookPlugin",
+            "kind": "Suppressed",
+            "line": 681,
+            "column": 1,
+            "message": "struct `BookPlugin` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "BookContent",
+            "kind": "Suppressed",
+            "line": 772,
+            "column": 1,
+            "message": "struct `BookContent` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "BookFeature",
+            "kind": "Suppressed",
+            "line": 800,
+            "column": 1,
+            "message": "enum `BookFeature` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "BookSettings",
+            "kind": "Suppressed",
+            "line": 816,
+            "column": 1,
+            "message": "struct `BookSettings` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "Chapter",
+            "kind": "Suppressed",
+            "line": 834,
+            "column": 1,
+            "message": "struct `Chapter` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "ChapterSettings",
+            "kind": "Suppressed",
+            "line": 856,
+            "column": 1,
+            "message": "struct `ChapterSettings` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "ChapterComponent",
+            "kind": "Suppressed",
+            "line": 871,
+            "column": 1,
+            "message": "struct `ChapterComponent` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "ComponentType",
+            "kind": "Suppressed",
+            "line": 889,
+            "column": 1,
+            "message": "enum `ComponentType` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 4.1184041184041185
+      },
+      {
+        "file_path": "src/repl/prompt.rs",
+        "dead_items": [
+          {
+            "name": "SessionPrompt",
+            "kind": "Suppressed",
+            "line": 191,
+            "column": 1,
+            "message": "struct `SessionPrompt` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.7532956685499058
+      },
+      {
+        "file_path": "src/serve/content.rs",
+        "dead_items": [
+          {
+            "name": "SharedContent",
+            "kind": "Suppressed",
+            "line": 289,
+            "column": 1,
+            "message": "type `SharedContent` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 1.06951871657754
+      },
+      {
+        "file_path": "examples/doctest_extraction.rs",
+        "dead_items": [
+          {
+            "name": "parse_from_file_example",
+            "kind": "Suppressed",
+            "line": 251,
+            "column": 1,
+            "message": "fn `parse_from_file_example` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "parse_from_directory_example",
+            "kind": "Suppressed",
+            "line": 263,
+            "column": 1,
+            "message": "fn `parse_from_directory_example` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 2.877697841726619
+      }
+    ],
+    "total_dead_items": 21,
+    "dead_code_percentage": 0.06183108336891074,
+    "total_lines": 67927,
+    "dead_lines": 42,
+    "dead_by_type": {
+      "suppressed": 21
+    }
+  }
+}

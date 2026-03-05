@@ -636,69 +636,23 @@ pub fn save<W: std::io::Write>(
     let uncompressed_size = payload_buf.len() as u32;
 
     // Compress payload if needed
-    let compressed_payload = match options.compression {
-        Compression::None => payload_buf,
-        Compression::ZstdL3 => {
-            zstd::encode_all(payload_buf.as_slice(), 3).map_err(Error::io_no_path)?
-        }
-        Compression::ZstdL19 => {
-            zstd::encode_all(payload_buf.as_slice(), 19).map_err(Error::io_no_path)?
-        }
-        Compression::Lz4 => {
-            let mut encoder = lz4_flex::frame::FrameEncoder::new(Vec::new());
-            std::io::Write::write_all(&mut encoder, &payload_buf).map_err(Error::io_no_path)?;
-            encoder
-                .finish()
-                .map_err(|e| Error::Format(format!("LZ4 compression error: {e}")))?
-        }
-    };
+    let compressed_payload = compress_payload(payload_buf, options.compression)?;
 
     // Build flags
     let mut header_flags: u8 = 0;
 
-    // Encryption block (mode + salt/ephemeral_key + nonce)
+    // Encryption: build block, split into header and ciphertext payload
     #[cfg(feature = "format-encryption")]
-    let encryption_block: Option<Vec<u8>> = if let Some(ref enc_params) = options.encryption {
+    let (final_payload, encryption_header) = if let Some(ref enc_params) = options.encryption {
         header_flags |= flags::ENCRYPTED;
-        Some(build_encryption_block(&compressed_payload, enc_params)?)
+        let block = build_encryption_block(&compressed_payload, enc_params)?;
+        let hdr_size = encryption_block_header_size(block[0]);
+        (block[hdr_size..].to_vec(), block[..hdr_size].to_vec())
     } else {
-        None
+        (compressed_payload, Vec::new())
     };
     #[cfg(not(feature = "format-encryption"))]
-    #[allow(clippy::no_effect_underscore_binding)]
-    let _encryption_block: Option<Vec<u8>> = None;
-
-    // Get the final payload (encrypted or not)
-    #[cfg(feature = "format-encryption")]
-    let final_payload: Vec<u8> = if let Some(ref block) = encryption_block {
-        // Block contains: mode(1) + salt/ephemeral(16/32) + nonce(12) + ciphertext
-        // We store the ciphertext portion as the payload
-        let header_size = if block[0] == encryption::mode::PASSWORD {
-            1 + 16 + 12 // mode + salt + nonce
-        } else {
-            1 + 32 + 12 // mode + ephemeral_pub + nonce
-        };
-        block[header_size..].to_vec()
-    } else {
-        compressed_payload
-    };
-    #[cfg(not(feature = "format-encryption"))]
-    let final_payload: Vec<u8> = compressed_payload;
-
-    // Encryption header (salt/nonce portion, written before payload)
-    #[cfg(feature = "format-encryption")]
-    let encryption_header: Vec<u8> = if let Some(ref block) = encryption_block {
-        let header_size = if block[0] == encryption::mode::PASSWORD {
-            1 + 16 + 12 // mode + salt + nonce
-        } else {
-            1 + 32 + 12 // mode + ephemeral_pub + nonce
-        };
-        block[..header_size].to_vec()
-    } else {
-        Vec::new()
-    };
-    #[cfg(not(feature = "format-encryption"))]
-    let encryption_header: Vec<u8> = Vec::new();
+    let (final_payload, encryption_header): (Vec<u8>, Vec<u8>) = (compressed_payload, Vec::new());
 
     // Signing setup
     #[cfg(feature = "format-signing")]
@@ -793,6 +747,34 @@ pub fn save<W: std::io::Write>(
         .map_err(Error::io_no_path)?;
 
     Ok(())
+}
+
+/// Compress a payload buffer using the specified compression method.
+fn compress_payload(payload: Vec<u8>, compression: Compression) -> Result<Vec<u8>> {
+    match compression {
+        Compression::None => Ok(payload),
+        Compression::ZstdL3 => zstd::encode_all(payload.as_slice(), 3).map_err(Error::io_no_path),
+        Compression::ZstdL19 => {
+            zstd::encode_all(payload.as_slice(), 19).map_err(Error::io_no_path)
+        }
+        Compression::Lz4 => {
+            let mut encoder = lz4_flex::frame::FrameEncoder::new(Vec::new());
+            std::io::Write::write_all(&mut encoder, &payload).map_err(Error::io_no_path)?;
+            encoder
+                .finish()
+                .map_err(|e| Error::Format(format!("LZ4 compression error: {e}")))
+        }
+    }
+}
+
+/// Return the header size for an encryption block based on its mode byte.
+#[cfg(feature = "format-encryption")]
+fn encryption_block_header_size(mode: u8) -> usize {
+    if mode == encryption::mode::PASSWORD {
+        1 + 16 + 12 // mode + salt + nonce
+    } else {
+        1 + 32 + 12 // mode + ephemeral_pub + nonce
+    }
 }
 
 /// Build encryption block: mode + key_material + nonce + ciphertext
@@ -908,30 +890,7 @@ pub fn load_with_options<R: std::io::Read>(
     let schema_end = metadata_end + header.schema_size as usize;
 
     // Determine encryption header size
-    let encryption_header_size = if header.is_encrypted() {
-        // Need to peek at mode byte to determine header size
-        if all_data.len() <= schema_end {
-            return Err(Error::Format("Missing encryption header".to_string()));
-        }
-        let mode = all_data[schema_end];
-        #[cfg(feature = "format-encryption")]
-        let size = if mode == encryption::mode::PASSWORD {
-            1 + 16 + 12 // mode + salt + nonce
-        } else {
-            1 + 32 + 12 // mode + ephemeral_pub + nonce
-        };
-        #[cfg(not(feature = "format-encryption"))]
-        {
-            let _ = mode;
-            return Err(Error::Format(
-                "Dataset is encrypted but format-encryption feature is not enabled".to_string(),
-            ));
-        }
-        #[cfg(feature = "format-encryption")]
-        size
-    } else {
-        0
-    };
+    let encryption_header_size = determine_encryption_header_size(&header, &all_data, schema_end)?;
 
     let payload_start = schema_end + encryption_header_size;
     let payload_end = payload_start + header.payload_size as usize;
@@ -963,87 +922,12 @@ pub fn load_with_options<R: std::io::Read>(
         all_data[payload_start..payload_end].to_vec()
     };
 
-    // Parse trailing blocks (signature, license) working backwards from checksum
-    #[allow(unused_mut)]
-    let mut trailing_offset = payload_end;
-    #[allow(unused_mut)]
-    let mut signer_public_key: Option<[u8; 32]> = None;
-    let mut license_block: Option<license::LicenseBlock> = None;
-
-    // Signature block comes right after payload (if present)
-    if header.is_signed() {
-        #[cfg(feature = "format-signing")]
-        {
-            let sig_start = trailing_offset;
-            let sig_end = sig_start + signing::SignatureBlock::SIZE;
-
-            if sig_end > checksum_offset {
-                return Err(Error::Format(
-                    "Signature block extends beyond data".to_string(),
-                ));
-            }
-
-            let sig_block = signing::SignatureBlock::from_bytes(&all_data[sig_start..sig_end])?;
-
-            // Verify signature if trusted keys provided
-            if !options.trusted_keys.is_empty() {
-                // Signature covers: header + metadata + schema + enc_header + payload
-                let signed_data = &all_data[..sig_start];
-
-                // Check if signer is in trusted keys
-                if !options.trusted_keys.contains(&sig_block.public_key) {
-                    return Err(Error::Format("Signer not in trusted keys list".to_string()));
-                }
-
-                sig_block.verify(signed_data)?;
-            }
-
-            // Always record the signer's public key
-            signer_public_key = Some(sig_block.public_key);
-            trailing_offset = sig_end;
-        }
-        #[cfg(not(feature = "format-signing"))]
-        {
-            return Err(Error::Format(
-                "Dataset is signed but format-signing feature is not enabled".to_string(),
-            ));
-        }
-    }
-
-    // License block comes after signature (if present)
-    if header.is_licensed() {
-        let lic_start = trailing_offset;
-        // License block is variable size, need to parse it
-        if lic_start >= checksum_offset {
-            return Err(Error::Format("Missing license block".to_string()));
-        }
-
-        let lic_data = &all_data[lic_start..checksum_offset];
-        license_block = Some(license::LicenseBlock::from_bytes(lic_data)?);
-
-        // Verify license if requested
-        if options.verify_license {
-            if let Some(ref lic) = license_block {
-                lic.verify()?;
-            }
-        }
-    }
+    // Parse trailing blocks (signature, license)
+    let (signer_public_key, license_block) =
+        parse_trailing_blocks(&header, &all_data, payload_end, checksum_offset, options)?;
 
     // Decompress payload
-    let decompressed_payload = match header.compression {
-        Compression::None => compressed_payload,
-        Compression::ZstdL3 | Compression::ZstdL19 => {
-            zstd::decode_all(compressed_payload.as_slice())
-                .map_err(|e| Error::Format(format!("Zstd decompression error: {e}")))?
-        }
-        Compression::Lz4 => {
-            let mut decoder = lz4_flex::frame::FrameDecoder::new(compressed_payload.as_slice());
-            let mut decompressed = Vec::new();
-            std::io::Read::read_to_end(&mut decoder, &mut decompressed)
-                .map_err(|e| Error::Format(format!("LZ4 decompression error: {e}")))?;
-            decompressed
-        }
-    };
+    let decompressed_payload = decompress_payload(compressed_payload, header.compression)?;
 
     // Parse Arrow IPC stream
     let cursor = std::io::Cursor::new(decompressed_payload);
@@ -1061,6 +945,106 @@ pub fn load_with_options<R: std::io::Read>(
         license: license_block,
         signer_public_key,
     })
+}
+
+/// Determine the encryption header size from the mode byte.
+fn determine_encryption_header_size(
+    header: &Header,
+    all_data: &[u8],
+    schema_end: usize,
+) -> Result<usize> {
+    if !header.is_encrypted() {
+        return Ok(0);
+    }
+
+    if all_data.len() <= schema_end {
+        return Err(Error::Format("Missing encryption header".to_string()));
+    }
+
+    #[cfg(feature = "format-encryption")]
+    {
+        Ok(encryption_block_header_size(all_data[schema_end]))
+    }
+    #[cfg(not(feature = "format-encryption"))]
+    {
+        Err(Error::Format(
+            "Dataset is encrypted but format-encryption feature is not enabled".to_string(),
+        ))
+    }
+}
+
+/// Parse trailing blocks (signature, license) after the payload.
+fn parse_trailing_blocks(
+    header: &Header,
+    all_data: &[u8],
+    payload_end: usize,
+    checksum_offset: usize,
+    options: &LoadOptions,
+) -> Result<(Option<[u8; 32]>, Option<license::LicenseBlock>)> {
+    #[allow(unused_mut)]
+    let mut trailing_offset = payload_end;
+    #[allow(unused_mut)]
+    let mut signer_public_key: Option<[u8; 32]> = None;
+    let mut license_block: Option<license::LicenseBlock> = None;
+
+    if header.is_signed() {
+        #[cfg(feature = "format-signing")]
+        {
+            let sig_end = trailing_offset + signing::SignatureBlock::SIZE;
+            if sig_end > checksum_offset {
+                return Err(Error::Format("Signature block extends beyond data".to_string()));
+            }
+
+            let sig_block =
+                signing::SignatureBlock::from_bytes(&all_data[trailing_offset..sig_end])?;
+
+            if !options.trusted_keys.is_empty() {
+                let signed_data = &all_data[..trailing_offset];
+                if !options.trusted_keys.contains(&sig_block.public_key) {
+                    return Err(Error::Format("Signer not in trusted keys list".to_string()));
+                }
+                sig_block.verify(signed_data)?;
+            }
+
+            signer_public_key = Some(sig_block.public_key);
+            trailing_offset = sig_end;
+        }
+        #[cfg(not(feature = "format-signing"))]
+        {
+            return Err(Error::Format(
+                "Dataset is signed but format-signing feature is not enabled".to_string(),
+            ));
+        }
+    }
+
+    if header.is_licensed() {
+        if trailing_offset >= checksum_offset {
+            return Err(Error::Format("Missing license block".to_string()));
+        }
+        let lic = license::LicenseBlock::from_bytes(&all_data[trailing_offset..checksum_offset])?;
+        if options.verify_license {
+            lic.verify()?;
+        }
+        license_block = Some(lic);
+    }
+
+    Ok((signer_public_key, license_block))
+}
+
+/// Decompress a payload buffer using the specified compression method.
+fn decompress_payload(payload: Vec<u8>, compression: Compression) -> Result<Vec<u8>> {
+    match compression {
+        Compression::None => Ok(payload),
+        Compression::ZstdL3 | Compression::ZstdL19 => zstd::decode_all(payload.as_slice())
+            .map_err(|e| Error::Format(format!("Zstd decompression error: {e}"))),
+        Compression::Lz4 => {
+            let mut decoder = lz4_flex::frame::FrameDecoder::new(payload.as_slice());
+            let mut decompressed = Vec::new();
+            std::io::Read::read_to_end(&mut decoder, &mut decompressed)
+                .map_err(|e| Error::Format(format!("LZ4 decompression error: {e}")))?;
+            Ok(decompressed)
+        }
+    }
 }
 
 /// Decrypt payload using the provided parameters
