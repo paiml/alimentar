@@ -1,0 +1,136 @@
+# Nightly binary builds — cross-compiled for 4 targets
+# Schedule: daily 4am UTC, or manual dispatch
+# Skips build if no commits in the last 24 hours
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Check for recent activity ─────────────────────────────
+  check-activity:
+    runs-on: ubuntu-latest
+    outputs:
+      has_new_commits: ${{ steps.check.outputs.has_new_commits }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for commits in last 24h
+        id: check
+        run: |
+          RECENT=$(git log --oneline --since="24 hours ago" | wc -l)
+          if [ "$RECENT" -gt 0 ]; then
+            echo "has_new_commits=true" >> "$GITHUB_OUTPUT"
+            echo "Found $RECENT commit(s) in the last 24 hours"
+          else
+            echo "has_new_commits=false" >> "$GITHUB_OUTPUT"
+            echo "No new commits in the last 24 hours — skipping build"
+          fi
+
+  # ── Build cross-compiled binaries ─────────────────────────
+  build:
+    needs: check-activity
+    if: needs.check-activity.outputs.has_new_commits == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} --features cli
+
+      - name: Package binary (unix)
+        if: runner.os != 'Windows'
+        run: |
+          tar -czf alimentar-${{ matrix.target }}.tar.gz \
+            -C target/${{ matrix.target }}/release alimentar
+
+      - name: Package binary (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path target/${{ matrix.target }}/release/alimentar.exe `
+            -DestinationPath alimentar-${{ matrix.target }}.zip
+
+      - name: Upload artifact (unix)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: alimentar-${{ matrix.target }}
+          path: alimentar-${{ matrix.target }}.tar.gz
+          retention-days: 5
+
+      - name: Upload artifact (windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: alimentar-${{ matrix.target }}
+          path: alimentar-${{ matrix.target }}.zip
+          retention-days: 5
+
+  # ── Create nightly prerelease ─────────────────────────────
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: alimentar-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          sha256sum * > SHA256SUMS
+          echo "=== SHA256SUMS ==="
+          cat SHA256SUMS
+
+      - name: Delete existing nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+
+      - name: Create nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Nightly Build
+          prerelease: true
+          make_latest: false
+          body: |
+            Automated nightly build from `main` branch.
+
+            **Date:** ${{ github.event.repository.updated_at }}
+            **Commit:** ${{ github.sha }}
+          files: dist/*
