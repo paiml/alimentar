@@ -454,37 +454,46 @@ impl Unique {
         self.columns.as_deref()
     }
 
-    fn row_key(batch: &RecordBatch, row_idx: usize, key_indices: &[usize]) -> String {
+    fn row_key(batch: &RecordBatch, row_idx: usize, key_indices: &[usize]) -> u64 {
         use arrow::array::{
             BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
         };
+        use std::hash::{DefaultHasher, Hash, Hasher};
 
-        let mut parts: Vec<String> = Vec::with_capacity(key_indices.len());
+        let mut hasher = DefaultHasher::new();
 
         for &col_idx in key_indices {
             let col = batch.column(col_idx);
-            let val = if col.is_null(row_idx) {
-                "NULL".to_string()
+            if col.is_null(row_idx) {
+                // Sentinel: hash a tag byte that cannot collide with real values
+                0u8.hash(&mut hasher);
             } else if let Some(arr) = col.as_any().downcast_ref::<Int32Array>() {
-                arr.value(row_idx).to_string()
+                1u8.hash(&mut hasher);
+                arr.value(row_idx).hash(&mut hasher);
             } else if let Some(arr) = col.as_any().downcast_ref::<Int64Array>() {
-                arr.value(row_idx).to_string()
+                2u8.hash(&mut hasher);
+                arr.value(row_idx).hash(&mut hasher);
             } else if let Some(arr) = col.as_any().downcast_ref::<Float32Array>() {
-                // Use bits for exact comparison
-                arr.value(row_idx).to_bits().to_string()
+                // Use bits for exact comparison (same semantics as before)
+                3u8.hash(&mut hasher);
+                arr.value(row_idx).to_bits().hash(&mut hasher);
             } else if let Some(arr) = col.as_any().downcast_ref::<Float64Array>() {
-                arr.value(row_idx).to_bits().to_string()
+                4u8.hash(&mut hasher);
+                arr.value(row_idx).to_bits().hash(&mut hasher);
             } else if let Some(arr) = col.as_any().downcast_ref::<StringArray>() {
-                arr.value(row_idx).to_string()
+                5u8.hash(&mut hasher);
+                arr.value(row_idx).hash(&mut hasher);
             } else if let Some(arr) = col.as_any().downcast_ref::<BooleanArray>() {
-                arr.value(row_idx).to_string()
+                6u8.hash(&mut hasher);
+                arr.value(row_idx).hash(&mut hasher);
             } else {
-                format!("{:?}", col.data_type())
-            };
-            parts.push(val);
+                // Fallback: hash the data type debug repr
+                7u8.hash(&mut hasher);
+                format!("{:?}", col.data_type()).hash(&mut hasher);
+            }
         }
 
-        parts.join("\x00")
+        hasher.finish()
     }
 }
 
@@ -513,8 +522,8 @@ impl Transform for Unique {
             None => (0..schema.fields().len()).collect(),
         };
 
-        // Build a hash of each row's key columns
-        let mut seen: HashMap<String, usize> = HashMap::new();
+        // Build a hash of each row's key columns (u64 hash keys to avoid String allocation storm)
+        let mut seen: HashMap<u64, usize> = HashMap::new();
         let mut keep_indices: Vec<usize> = Vec::new();
 
         let row_iter: Box<dyn Iterator<Item = usize>> = if self.keep_last {
@@ -524,7 +533,6 @@ impl Transform for Unique {
         };
 
         for row_idx in row_iter {
-            // Create a string key from the key columns
             let key = Self::row_key(&batch, row_idx, &key_indices);
 
             if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(key) {
