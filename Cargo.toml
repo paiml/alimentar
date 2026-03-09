@@ -27,6 +27,7 @@ format-encryption = ["dep:aes-gcm", "dep:argon2", "dep:x25519-dalek", "dep:hkdf"
 format-signing = ["dep:ed25519-dalek", "dep:getrandom"]
 format-streaming = ["mmap"]
 doctest = ["dep:chrono", "dep:regex", "dep:walkdir"]
+dhat-heap = ["dep:dhat"]
 
 [dependencies]
 # Core (always)
@@ -88,6 +89,9 @@ rand_core = { version = "0.6", optional = true }
 # Signing (feature-gated, WASM-safe)
 ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
 serde_yaml = "0.9.34"
+
+# Heap profiling (feature-gated)
+dhat = { version = "0.3", optional = true }
 
 # TUI support (unicode width calculation)
 unicode-width = "0.2"
