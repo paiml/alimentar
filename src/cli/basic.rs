@@ -65,24 +65,70 @@ pub(crate) fn cmd_convert(input: &Path, output: &Path) -> crate::Result<()> {
 }
 
 /// Display dataset information.
+/// ALB-099: For Parquet, reads only file metadata (footer) — zero row group decoding.
+/// dhat profiling showed the old path loaded the entire dataset (69.8 MB for 9 MB file).
 pub(crate) fn cmd_info(path: &Path) -> crate::Result<()> {
-    let dataset = load_dataset(path)?;
-
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     println!("File: {}", path.display());
     println!("Format: {}", get_format(path));
-    println!("Rows: {}", dataset.len());
-    println!("Batches: {}", dataset.num_batches());
-    println!("Columns: {}", dataset.schema().fields().len());
-    println!("Size: {} bytes", file_size);
+
+    if ext == "parquet" {
+        // Read only Parquet footer metadata — no row group decoding
+        let file = std::fs::File::open(path).map_err(|e| crate::Error::io(e, path))?;
+        let builder = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file)
+            .map_err(crate::Error::Parquet)?;
+        let metadata = builder.metadata();
+        let num_rows: i64 = metadata
+            .row_groups()
+            .iter()
+            .map(|rg| rg.num_rows())
+            .sum();
+        let num_batches = metadata.num_row_groups();
+        let num_columns = metadata
+            .row_groups()
+            .first()
+            .map_or(0, |rg| rg.num_columns());
+        println!("Rows: {num_rows}");
+        println!("Batches: {num_batches}");
+        println!("Columns: {num_columns}");
+    } else {
+        let dataset = load_dataset(path)?;
+        println!("Rows: {}", dataset.len());
+        println!("Batches: {}", dataset.num_batches());
+        println!("Columns: {}", dataset.schema().fields().len());
+    }
+
+    println!("Size: {file_size} bytes");
 
     Ok(())
 }
 
 /// Display first N rows of a dataset.
 pub(crate) fn cmd_head(path: &Path, rows: usize) -> crate::Result<()> {
-    let dataset = load_dataset(path)?;
+    // ALB-099: For Parquet, use with_limit() to avoid loading the entire dataset.
+    // dhat profiling showed `head -n 10` allocated 69.8 MB for a 9 MB/1M-row file.
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let dataset = if ext == "parquet" {
+        let file = std::fs::File::open(path).map_err(|e| crate::Error::io(e, path))?;
+        let builder = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file)
+            .map_err(crate::Error::Parquet)?;
+        let reader = builder
+            .with_limit(rows)
+            .build()
+            .map_err(crate::Error::Parquet)?;
+        let batches: Vec<arrow::record_batch::RecordBatch> = reader
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(crate::Error::Arrow)?;
+        if batches.is_empty() {
+            println!("Dataset is empty");
+            return Ok(());
+        }
+        ArrowDataset::new(batches)?
+    } else {
+        load_dataset(path)?
+    };
 
     if dataset.is_empty() {
         println!("Dataset is empty");
