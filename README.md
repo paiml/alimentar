@@ -14,8 +14,6 @@
   <a href="https://crates.io/crates/alimentar"><img src="https://img.shields.io/crates/v/alimentar.svg" alt="Crates.io"></a>
   <a href="https://docs.rs/alimentar"><img src="https://docs.rs/alimentar/badge.svg" alt="Documentation"></a>
   <a href="https://github.com/paiml/alimentar/actions/workflows/ci.yml"><img src="https://github.com/paiml/alimentar/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/paiml/alimentar/actions/workflows/coverage.yml"><img src="https://github.com/paiml/alimentar/actions/workflows/coverage.yml/badge.svg" alt="Coverage"></a>
-  <a href="https://github.com/paiml/alimentar/actions/workflows/security.yml"><img src="https://github.com/paiml/alimentar/actions/workflows/security.yml/badge.svg" alt="Security"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/paiml/alimentar/blob/main/SECURITY.md"><img src="https://img.shields.io/badge/Security-Policy-green.svg" alt="Security Policy"></a>
 </p>
@@ -72,7 +70,7 @@ With specific features:
 
 ```toml
 [dependencies]
-alimentar = { version = "0.1", features = ["s3", "hf-hub"] }
+alimentar = { version = "0.2", features = ["s3", "hf-hub"] }
 ```
 
 ## Quick Start
@@ -229,7 +227,7 @@ If you use alimentar in your research, please cite:
   year         = {2025},
   publisher    = {GitHub},
   url          = {https://github.com/paiml/alimentar},
-  version      = {0.1.0}
+  version      = {0.2}
 }
 ```
 
