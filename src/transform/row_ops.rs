@@ -455,10 +455,11 @@ impl Unique {
     }
 
     fn row_key(batch: &RecordBatch, row_idx: usize, key_indices: &[usize]) -> u64 {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
         use arrow::array::{
             BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, StringArray,
         };
-        use std::hash::{DefaultHasher, Hash, Hasher};
 
         let mut hasher = DefaultHasher::new();
 
@@ -522,7 +523,8 @@ impl Transform for Unique {
             None => (0..schema.fields().len()).collect(),
         };
 
-        // Build a hash of each row's key columns (u64 hash keys to avoid String allocation storm)
+        // Build a hash of each row's key columns (u64 hash keys to avoid String
+        // allocation storm)
         let mut seen: HashMap<u64, usize> = HashMap::new();
         let mut keep_indices: Vec<usize> = Vec::new();
 
