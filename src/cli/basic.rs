@@ -80,11 +80,7 @@ pub(crate) fn cmd_info(path: &Path) -> crate::Result<()> {
         let builder = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file)
             .map_err(crate::Error::Parquet)?;
         let metadata = builder.metadata();
-        let num_rows: i64 = metadata
-            .row_groups()
-            .iter()
-            .map(|rg| rg.num_rows())
-            .sum();
+        let num_rows: i64 = metadata.row_groups().iter().map(|rg| rg.num_rows()).sum();
         let num_batches = metadata.num_row_groups();
         let num_columns = metadata
             .row_groups()
