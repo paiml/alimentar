@@ -65,8 +65,9 @@ pub(crate) fn cmd_convert(input: &Path, output: &Path) -> crate::Result<()> {
 }
 
 /// Display dataset information.
-/// ALB-099: For Parquet, reads only file metadata (footer) — zero row group decoding.
-/// dhat profiling showed the old path loaded the entire dataset (69.8 MB for 9 MB file).
+/// ALB-099: For Parquet, reads only file metadata (footer) — zero row group
+/// decoding. dhat profiling showed the old path loaded the entire dataset (69.8
+/// MB for 9 MB file).
 pub(crate) fn cmd_info(path: &Path) -> crate::Result<()> {
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
