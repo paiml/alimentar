@@ -226,8 +226,12 @@ impl<D: Dataset> Iterator for WeightedDataLoaderIterator<D> {
                 .collect(),
             None => {
                 // Fallback: uniform sampling if weights are all zero
+                let len = self.dataset.len();
+                if len == 0 {
+                    return None;
+                }
                 (0..batch_size)
-                    .map(|i| (self.samples_yielded + i) % self.dataset.len())
+                    .map(|i| (self.samples_yielded + i) % len)
                     .collect()
             }
         };

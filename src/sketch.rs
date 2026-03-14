@@ -200,7 +200,7 @@ impl TDigest {
 
     /// Get the CDF value for a given x (proportion of values <= x)
     pub fn cdf(&self, x: f64) -> f64 {
-        if self.centroids.is_empty() {
+        if self.centroids.is_empty() || self.total_weight == 0.0 {
             return 0.0;
         }
 
