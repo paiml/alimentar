@@ -220,20 +220,19 @@ impl<D: Dataset> Iterator for WeightedDataLoaderIterator<D> {
         }
 
         // Sample indices according to weights
-        let indices: Vec<usize> = match &self.dist {
-            Some(dist) => (0..batch_size)
+        let indices: Vec<usize> = if let Some(dist) = &self.dist {
+            (0..batch_size)
                 .map(|_| dist.sample(&mut self.rng))
-                .collect(),
-            None => {
-                // Fallback: uniform sampling if weights are all zero
-                let len = self.dataset.len();
-                if len == 0 {
-                    return None;
-                }
-                (0..batch_size)
-                    .map(|i| (self.samples_yielded + i) % len)
-                    .collect()
+                .collect()
+        } else {
+            // Fallback: uniform sampling if weights are all zero
+            let len = self.dataset.len();
+            if len == 0 {
+                return None;
             }
+            (0..batch_size)
+                .map(|i| (self.samples_yielded + i) % len)
+                .collect()
         };
 
         self.samples_yielded += batch_size;
