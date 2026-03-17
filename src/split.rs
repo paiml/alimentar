@@ -310,7 +310,7 @@ fn shuffle_indices(indices: &mut [usize], seed: u64) {
 /// Group row indices by label value
 fn group_by_label(label_array: &Arc<dyn Array>) -> Result<HashMap<i64, Vec<usize>>> {
     use arrow::{
-        array::{Int32Array, Int64Array, UInt32Array, UInt64Array},
+        array::{Int32Array, Int64Array, StringArray, UInt32Array, UInt64Array},
         datatypes::DataType,
     };
 
@@ -333,6 +333,19 @@ fn group_by_label(label_array: &Arc<dyn Array>) -> Result<HashMap<i64, Vec<usize
             let arr = downcast_label::<UInt64Array>(label_array, "UInt64Array")?;
             // May truncate very large values
             collect_groups(arr.iter(), &mut groups, |v| v as i64);
+        }
+        DataType::Utf8 | DataType::LargeUtf8 => {
+            // Hash string labels to i64 for grouping (alimentar#37)
+            let arr = downcast_label::<StringArray>(label_array, "StringArray")?;
+            collect_groups(arr.iter(), &mut groups, |s: &str| {
+                // FNV-1a hash — deterministic, fast, good distribution
+                let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+                for byte in s.as_bytes() {
+                    hash ^= u64::from(*byte);
+                    hash = hash.wrapping_mul(0x0100_0000_01b3);
+                }
+                hash as i64
+            });
         }
         dt => {
             return Err(Error::invalid_config(format!(
@@ -851,7 +864,7 @@ mod tests {
     }
 
     #[test]
-    fn test_stratified_rejects_unsupported_label_type() {
+    fn test_stratified_with_string_labels() {
         use arrow::array::StringArray;
 
         let schema = Arc::new(Schema::new(vec![
@@ -875,8 +888,11 @@ mod tests {
 
         let dataset = ArrowDataset::from_batch(batch).expect("dataset creation failed");
 
-        let result = DatasetSplit::stratified(&dataset, "label", 0.8, 0.2, None, None);
-        assert!(result.is_err());
+        let split = DatasetSplit::stratified(&dataset, "label", 0.8, 0.2, None, Some(42))
+            .expect("stratified split with string labels should succeed");
+        assert_eq!(split.train().len() + split.test().len(), 100);
+        assert!(split.train().len() > 0);
+        assert!(split.test().len() > 0);
     }
 
     #[test]
