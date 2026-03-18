@@ -68,7 +68,7 @@ pub(crate) fn cmd_quality_check(
     let dataset = load_dataset(path)?;
 
     // GH-38: --duplicate-threshold is not yet used by QualityChecker
-    if duplicate_threshold != 0.05 {
+    if (duplicate_threshold - 0.05_f64).abs() > f64::EPSILON {
         eprintln!(
             "Warning: --duplicate-threshold {duplicate_threshold} is not yet implemented. Using default behavior."
         );
