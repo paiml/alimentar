@@ -36,9 +36,13 @@ pub(crate) fn cmd_view(path: &Path, initial_search: Option<&str>) -> crate::Resu
 
     let result = run_tui_loop(&mut viewer, &mut stdout, path);
 
-    // Cleanup: restore terminal
-    let _ = execute!(stdout, cursor::Show);
-    let _ = terminal::disable_raw_mode();
+    // Cleanup: restore terminal — log failures to avoid corrupted terminal state
+    if execute!(stdout, cursor::Show).is_err() {
+        eprintln!("Warning: failed to restore cursor visibility");
+    }
+    if terminal::disable_raw_mode().is_err() {
+        eprintln!("Warning: failed to disable raw mode — run 'reset' to fix terminal");
+    }
 
     result
 }
