@@ -61,12 +61,19 @@ pub enum QualityCommands {
 pub(crate) fn cmd_quality_check(
     path: &Path,
     null_threshold: f64,
-    _duplicate_threshold: f64,
+    duplicate_threshold: f64,
     detect_outliers: bool,
     format: &str,
 ) -> crate::Result<()> {
     let dataset = load_dataset(path)?;
 
+    // GH-38: --duplicate-threshold is not yet used by QualityChecker
+    if duplicate_threshold != 0.05 {
+        eprintln!(
+            "Warning: --duplicate-threshold {duplicate_threshold} is not yet implemented. Using default behavior."
+        );
+    }
+    let _ = duplicate_threshold;
     let mut checker = QualityChecker::new();
 
     if !detect_outliers {
