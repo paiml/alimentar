@@ -23,7 +23,7 @@ proof_obligations:
 falsification_tests:
   - id: FALSIFY-BATCH-001
     rule: "Batch completeness"
-    test: "test_batch_covers_all_data"
+    test: "test_corpus_to_record_batch"
     prediction: "verified"
     if_fails: "Contract violation — data lost during batching"
 
@@ -33,7 +33,7 @@ kani_harnesses:
     property: "Batch completeness for bounded inputs"
     bound: 8
     strategy: bounded_int
-    harness: verify_batch_completeness
+    harness: verify_batch_loading
 
 qa_gate:
   id: QA-BATCH
