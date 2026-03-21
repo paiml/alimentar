@@ -1,4 +1,5 @@
 [package]
+exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
 name = "alimentar"
 version = "0.2.8"
 edition = "2021"
