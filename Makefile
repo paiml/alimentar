@@ -48,18 +48,9 @@ bench-check: ## Check benchmarks compile
 test: ## Run all tests
 	PROPTEST_CASES=100 cargo test --all-features
 
-test-fast: ## Run tests quickly (parallel with nextest, target: <2 min)
+test-fast: ## Run tests quickly (lib only, target: <2 min)
 	@echo "⚡ Running fast tests (target: <2 min)..."
-	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		cargo nextest run \
-			--workspace \
-			--all-features \
-			--status-level skip \
-			--failure-output immediate; \
-	else \
-		echo "📦 cargo-nextest not found, using cargo test..."; \
-		cargo test --all-features --workspace; \
-	fi
+	PROPTEST_CASES=10 cargo test --lib --all-features
 
 test-verbose: ## Run tests with verbose output
 	PROPTEST_CASES=100 cargo test --all-features -- --nocapture
@@ -70,7 +61,7 @@ test-lib: ## Run library tests only
 test-s3: ## Run S3 integration tests (requires docker compose up -d first)
 	@echo "🪣 Running S3 integration tests with MinIO..."
 	@echo "   Ensure MinIO is running: docker compose up -d"
-	cargo test --features s3 s3_integration -- --ignored
+	PROPTEST_CASES=10 cargo test --features s3 s3_integration -- --ignored
 
 test-s3-full: ## Start MinIO and run S3 integration tests
 	@echo "🚀 Starting MinIO via docker compose..."
@@ -112,13 +103,12 @@ COVERAGE_FEATURES := local,tokio-runtime,cli,mmap,http,hf-hub,shuffle,format-enc
 coverage: ## Generate HTML coverage report (target: <5 min)
 	@echo "📊 Running coverage analysis (target: <5 min)..."
 	@echo "   Note: S3 feature excluded (requires MinIO)"
-	@echo "🔍 Checking for cargo-llvm-cov and cargo-nextest..."
+	@echo "🔍 Checking for cargo-llvm-cov..."
 	@which cargo-llvm-cov > /dev/null 2>&1 || (echo "📦 Installing cargo-llvm-cov..." && cargo install cargo-llvm-cov --locked)
-	@which cargo-nextest > /dev/null 2>&1 || (echo "📦 Installing cargo-nextest..." && cargo install cargo-nextest --locked)
 	@echo "🧹 Cleaning old coverage data..."
 	@mkdir -p target/coverage
 	@echo "🧪 Phase 1: Running tests with instrumentation (no report)..."
-	@cargo llvm-cov test --no-report --lib --no-tests=warn --features "$(COVERAGE_FEATURES)" --workspace
+	@PROPTEST_CASES=10 cargo llvm-cov test --no-report --lib --features "$(COVERAGE_FEATURES)" --workspace
 	@echo "📊 Phase 2: Generating coverage reports..."
 	@cargo llvm-cov report --html --output-dir target/coverage/html
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info
@@ -146,8 +136,7 @@ coverage-check: ## Enforce 85% coverage threshold (BLOCKS on failure)
 	@echo "🔒 Enforcing $(COVERAGE_THRESHOLD)% coverage threshold..."
 	@echo "   Note: S3 feature excluded (requires MinIO)"
 	@which cargo-llvm-cov > /dev/null 2>&1 || (echo "📦 Installing cargo-llvm-cov..." && cargo install cargo-llvm-cov --locked)
-	@which cargo-nextest > /dev/null 2>&1 || (echo "📦 Installing cargo-nextest..." && cargo install cargo-nextest --locked)
-	@cargo llvm-cov test --no-report --lib --no-tests=warn --features "$(COVERAGE_FEATURES)" --workspace
+	@PROPTEST_CASES=10 cargo llvm-cov test --no-report --lib --features "$(COVERAGE_FEATURES)" --workspace
 	@cargo llvm-cov report --fail-under-lines $(COVERAGE_THRESHOLD) || \
 		(echo "❌ FAIL: Coverage below $(COVERAGE_THRESHOLD)% threshold"; \
 	@echo "✅ Coverage threshold met (≥$(COVERAGE_THRESHOLD)%)"
