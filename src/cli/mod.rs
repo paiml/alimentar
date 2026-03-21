@@ -275,145 +275,10 @@ pub fn run() -> ExitCode {
                 private,
             ),
         },
-        Commands::Registry(registry_cmd) => match registry_cmd {
-            RegistryCommands::Init { path } => registry::cmd_registry_init(&path),
-            RegistryCommands::List { path } => registry::cmd_registry_list(&path),
-            RegistryCommands::Push {
-                input,
-                name,
-                version,
-                description,
-                license,
-                tags,
-                registry,
-            } => registry::cmd_registry_push(
-                &input,
-                &name,
-                &version,
-                &description,
-                &license,
-                &tags,
-                &registry,
-            ),
-            RegistryCommands::Pull {
-                name,
-                output,
-                version,
-                registry,
-            } => registry::cmd_registry_pull(&name, &output, version.as_deref(), &registry),
-            RegistryCommands::Search { query, path } => {
-                registry::cmd_registry_search(&query, &path)
-            }
-            RegistryCommands::ShowInfo { name, path } => {
-                registry::cmd_registry_show_info(&name, &path)
-            }
-            RegistryCommands::Delete {
-                name,
-                version,
-                path,
-            } => registry::cmd_registry_delete(&name, &version, &path),
-        },
-        Commands::Drift(drift_cmd) => match drift_cmd {
-            DriftCommands::Detect {
-                reference,
-                current,
-                tests,
-                alpha,
-                format,
-            } => drift::cmd_drift_detect(&reference, &current, &tests, alpha, &format),
-            DriftCommands::Report {
-                reference,
-                current,
-                output,
-            } => drift::cmd_drift_report(&reference, &current, output.as_ref()),
-            DriftCommands::Sketch {
-                input,
-                output,
-                sketch_type,
-                source,
-                format,
-            } => drift::cmd_drift_sketch(&input, &output, &sketch_type, source.as_deref(), &format),
-            DriftCommands::Merge {
-                sketches,
-                output,
-                format,
-            } => drift::cmd_drift_merge(&sketches, &output, &format),
-            DriftCommands::Compare {
-                reference,
-                current,
-                threshold,
-                format,
-            } => drift::cmd_drift_compare(&reference, &current, threshold, &format),
-        },
-        Commands::Quality(quality_cmd) => match quality_cmd {
-            QualityCommands::Check {
-                path,
-                null_threshold,
-                duplicate_threshold,
-                detect_outliers,
-                format,
-            } => quality::cmd_quality_check(
-                &path,
-                null_threshold,
-                duplicate_threshold,
-                detect_outliers,
-                &format,
-            ),
-            QualityCommands::Report { path, output } => {
-                quality::cmd_quality_report(&path, output.as_deref())
-            }
-            QualityCommands::Score {
-                path,
-                profile,
-                suggest,
-                json,
-                badge,
-            } => quality::cmd_quality_score(&path, &profile, suggest, json, badge),
-            QualityCommands::Profiles => quality::cmd_quality_profiles(),
-        },
-        Commands::Fed(fed_cmd) => match fed_cmd {
-            FedCommands::Manifest {
-                input,
-                output,
-                node_id,
-                train_ratio,
-                seed,
-                format,
-            } => fed::cmd_fed_manifest(&input, &output, &node_id, train_ratio, seed, &format),
-            FedCommands::Plan {
-                manifests,
-                output,
-                strategy,
-                train_ratio,
-                seed,
-                stratify_column,
-                format,
-            } => fed::cmd_fed_plan(
-                &manifests,
-                &output,
-                &strategy,
-                train_ratio,
-                seed,
-                stratify_column.as_deref(),
-                &format,
-            ),
-            FedCommands::Split {
-                input,
-                plan,
-                node_id,
-                train_output,
-                test_output,
-                validation_output,
-            } => fed::cmd_fed_split(
-                &input,
-                &plan,
-                &node_id,
-                &train_output,
-                &test_output,
-                validation_output.as_ref(),
-            ),
-            FedCommands::Verify { manifests, format } => fed::cmd_fed_verify(&manifests, &format),
-        },
+        Commands::Registry(registry_cmd) => dispatch_registry(registry_cmd),
+        Commands::Drift(drift_cmd) => dispatch_drift(drift_cmd),
+        Commands::Quality(quality_cmd) => dispatch_quality(quality_cmd),
+        Commands::Fed(fed_cmd) => dispatch_fed(fed_cmd),
         #[cfg(feature = "doctest")]
         Commands::Doctest(doctest_cmd) => match doctest_cmd {
             DoctestCommands::Extract {
@@ -434,6 +299,153 @@ pub fn run() -> ExitCode {
             eprintln!("Error: {}", e);
             ExitCode::FAILURE
         }
+    }
+}
+
+fn dispatch_registry(cmd: RegistryCommands) -> crate::error::Result<()> {
+    match cmd {
+        RegistryCommands::Init { path } => registry::cmd_registry_init(&path),
+        RegistryCommands::List { path } => registry::cmd_registry_list(&path),
+        RegistryCommands::Push {
+            input,
+            name,
+            version,
+            description,
+            license,
+            tags,
+            registry,
+        } => registry::cmd_registry_push(
+            &input,
+            &name,
+            &version,
+            &description,
+            &license,
+            &tags,
+            &registry,
+        ),
+        RegistryCommands::Pull {
+            name,
+            output,
+            version,
+            registry,
+        } => registry::cmd_registry_pull(&name, &output, version.as_deref(), &registry),
+        RegistryCommands::Search { query, path } => registry::cmd_registry_search(&query, &path),
+        RegistryCommands::ShowInfo { name, path } => registry::cmd_registry_show_info(&name, &path),
+        RegistryCommands::Delete {
+            name,
+            version,
+            path,
+        } => registry::cmd_registry_delete(&name, &version, &path),
+    }
+}
+
+fn dispatch_drift(cmd: DriftCommands) -> crate::error::Result<()> {
+    match cmd {
+        DriftCommands::Detect {
+            reference,
+            current,
+            tests,
+            alpha,
+            format,
+        } => drift::cmd_drift_detect(&reference, &current, &tests, alpha, &format),
+        DriftCommands::Report {
+            reference,
+            current,
+            output,
+        } => drift::cmd_drift_report(&reference, &current, output.as_ref()),
+        DriftCommands::Sketch {
+            input,
+            output,
+            sketch_type,
+            source,
+            format,
+        } => drift::cmd_drift_sketch(&input, &output, &sketch_type, source.as_deref(), &format),
+        DriftCommands::Merge {
+            sketches,
+            output,
+            format,
+        } => drift::cmd_drift_merge(&sketches, &output, &format),
+        DriftCommands::Compare {
+            reference,
+            current,
+            threshold,
+            format,
+        } => drift::cmd_drift_compare(&reference, &current, threshold, &format),
+    }
+}
+
+fn dispatch_quality(cmd: QualityCommands) -> crate::error::Result<()> {
+    match cmd {
+        QualityCommands::Check {
+            path,
+            null_threshold,
+            duplicate_threshold,
+            detect_outliers,
+            format,
+        } => quality::cmd_quality_check(
+            &path,
+            null_threshold,
+            duplicate_threshold,
+            detect_outliers,
+            &format,
+        ),
+        QualityCommands::Report { path, output } => {
+            quality::cmd_quality_report(&path, output.as_deref())
+        }
+        QualityCommands::Score {
+            path,
+            profile,
+            suggest,
+            json,
+            badge,
+        } => quality::cmd_quality_score(&path, &profile, suggest, json, badge),
+        QualityCommands::Profiles => quality::cmd_quality_profiles(),
+    }
+}
+
+fn dispatch_fed(cmd: FedCommands) -> crate::error::Result<()> {
+    match cmd {
+        FedCommands::Manifest {
+            input,
+            output,
+            node_id,
+            train_ratio,
+            seed,
+            format,
+        } => fed::cmd_fed_manifest(&input, &output, &node_id, train_ratio, seed, &format),
+        FedCommands::Plan {
+            manifests,
+            output,
+            strategy,
+            train_ratio,
+            seed,
+            stratify_column,
+            format,
+        } => fed::cmd_fed_plan(
+            &manifests,
+            &output,
+            &strategy,
+            train_ratio,
+            seed,
+            stratify_column.as_deref(),
+            &format,
+        ),
+        FedCommands::Split {
+            input,
+            plan,
+            node_id,
+            train_output,
+            test_output,
+            validation_output,
+        } => fed::cmd_fed_split(
+            &input,
+            &plan,
+            &node_id,
+            &train_output,
+            &test_output,
+            validation_output.as_ref(),
+        ),
+        FedCommands::Verify { manifests, format } => fed::cmd_fed_verify(&manifests, &format),
     }
 }
 
