@@ -118,7 +118,7 @@ coverage: ## Generate HTML coverage report (target: <5 min)
 	@echo "🧹 Cleaning old coverage data..."
 	@mkdir -p target/coverage
 	@echo "🧪 Phase 1: Running tests with instrumentation (no report)..."
-	@cargo llvm-cov --no-report nextest --no-tests=warn --features "$(COVERAGE_FEATURES)" --workspace
+	@cargo llvm-cov test --no-report --lib --no-tests=warn --features "$(COVERAGE_FEATURES)" --workspace
 	@echo "📊 Phase 2: Generating coverage reports..."
 	@cargo llvm-cov report --html --output-dir target/coverage/html
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info
@@ -147,7 +147,7 @@ coverage-check: ## Enforce 85% coverage threshold (BLOCKS on failure)
 	@echo "   Note: S3 feature excluded (requires MinIO)"
 	@which cargo-llvm-cov > /dev/null 2>&1 || (echo "📦 Installing cargo-llvm-cov..." && cargo install cargo-llvm-cov --locked)
 	@which cargo-nextest > /dev/null 2>&1 || (echo "📦 Installing cargo-nextest..." && cargo install cargo-nextest --locked)
-	@cargo llvm-cov --no-report nextest --no-tests=warn --features "$(COVERAGE_FEATURES)" --workspace
+	@cargo llvm-cov test --no-report --lib --no-tests=warn --features "$(COVERAGE_FEATURES)" --workspace
 	@cargo llvm-cov report --fail-under-lines $(COVERAGE_THRESHOLD) || \
 		(echo "❌ FAIL: Coverage below $(COVERAGE_THRESHOLD)% threshold"; \
 	@echo "✅ Coverage threshold met (≥$(COVERAGE_THRESHOLD)%)"
