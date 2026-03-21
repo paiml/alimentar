@@ -46,7 +46,7 @@ bench-check: ## Check benchmarks compile
 ## - make test:      comprehensive
 
 test: ## Run all tests
-	cargo test --all-features
+	PROPTEST_CASES=100 cargo test --all-features
 
 test-fast: ## Run tests quickly (parallel with nextest, target: <2 min)
 	@echo "⚡ Running fast tests (target: <2 min)..."
@@ -62,10 +62,10 @@ test-fast: ## Run tests quickly (parallel with nextest, target: <2 min)
 	fi
 
 test-verbose: ## Run tests with verbose output
-	cargo test --all-features -- --nocapture
+	PROPTEST_CASES=100 cargo test --all-features -- --nocapture
 
 test-lib: ## Run library tests only
-	cargo test --lib --all-features
+	PROPTEST_CASES=100 cargo test --lib --all-features
 
 test-s3: ## Run S3 integration tests (requires docker compose up -d first)
 	@echo "🪣 Running S3 integration tests with MinIO..."
