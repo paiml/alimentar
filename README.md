@@ -248,6 +248,7 @@ Minimum Supported Rust Version: **1.75**
 MIT License - see [LICENSE](LICENSE) for details.
 
 ## Related Projects
+- [Cookbook](https://github.com/paiml/apr-cookbook)
 
 - [trueno-db](https://github.com/paiml/trueno-db) - GPU-accelerated vector database
 - [aprender](https://github.com/paiml/aprender) - ML/DL framework in Rust
