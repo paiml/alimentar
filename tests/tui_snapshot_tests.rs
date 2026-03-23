@@ -2,6 +2,16 @@
 //!
 //! Tests for TUI rendering using jugar-probar style snapshot testing.
 //! These tests capture the rendered output and verify it matches expectations.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::uninlined_format_args,
+    clippy::suboptimal_flops
+)]
 
 use std::sync::Arc;
 

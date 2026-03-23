@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_map_transform() {
         let batch = create_test_batch();
-        let transform = Map::new(|b| Ok(b)); // Identity transform
+        let transform = Map::new(Ok); // Identity transform
 
         let result = transform.apply(batch.clone());
         assert!(result.is_ok());

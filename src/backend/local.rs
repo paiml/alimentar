@@ -671,7 +671,7 @@ mod tests {
             .ok()
             .unwrap_or_else(|| panic!("exists"));
         // exists checks for file, not directory
-        assert!(!exists || exists); // Either way is acceptable
+        let _ = exists; // Either way is acceptable for directory existence
     }
 
     #[test]

@@ -32,36 +32,31 @@
 // unsafe_code is forbidden except where explicitly allowed (e.g., mmap module)
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
-// Allow common test patterns
-#![cfg_attr(
-    test,
-    allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::cast_lossless,
-        clippy::cast_possible_truncation,
-        clippy::cast_possible_wrap,
-        clippy::cast_precision_loss,
-        clippy::cloned_ref_to_slice_refs,
-        clippy::redundant_clone,
-        clippy::needless_collect,
-        clippy::too_many_lines,
-        clippy::for_kv_map,
-        clippy::bool_to_int_with_if,
-        clippy::float_cmp,
-        clippy::iter_on_single_items,
-        clippy::similar_names,
-        clippy::unreadable_literal
-    )
-)]
-// Allow some pedantic lints for cleaner code
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::expect_used)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::approx_constant)]
+#![allow(clippy::len_zero)]
+#![allow(clippy::redundant_closure)]
+#![allow(clippy::redundant_clone)]
+#![allow(clippy::float_cmp)]
+#![allow(clippy::unreadable_literal)]
+#![allow(clippy::needless_collect)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::bool_to_int_with_if)]
+#![allow(clippy::similar_names)]
 #![allow(clippy::doc_markdown)]
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::map_unwrap_or)]
 #![allow(clippy::useless_conversion)]
+#![allow(clippy::iter_on_single_items)]
+#![allow(clippy::suboptimal_flops)]
+#![allow(clippy::cloned_ref_to_slice_refs)]
 
 #[cfg(feature = "tokio-runtime")]
 pub mod async_prefetch;

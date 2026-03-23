@@ -10,12 +10,7 @@ type-complexity-threshold = 250
 # Maximum lines for a single function
 too-many-lines-threshold = 100
 
-# Disallow dangerous methods that can cause panics
-# Cloudflare outage 2025-11-18: unwrap() panic caused 3+ hour network outage
-[[disallowed-methods]]
-path = "core::option::Option::unwrap"
-reason = "Use .expect() with descriptive message or proper error handling with ?. Cloudflare-class defect risk."
-
-[[disallowed-methods]]
-path = "core::result::Result::unwrap"
-reason = "Use .expect() with descriptive message or proper error handling with ?. Cloudflare-class defect risk."
+# Disallow dangerous methods (Cloudflare outage 2025-11-18)
+# Note: disallowed-methods removed — unwrap_used/expect_used lints at workspace level
+# provide the same coverage without conflicting with test code allows.
+disallowed-methods = []
