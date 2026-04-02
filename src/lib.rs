@@ -28,7 +28,6 @@
 //!     println!("Batch with {} rows", batch.num_rows());
 //! }
 //! ```
-
 // unsafe_code is forbidden except where explicitly allowed (e.g., mmap module)
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
@@ -57,7 +56,9 @@
 #![allow(clippy::iter_on_single_items)]
 #![allow(clippy::suboptimal_flops)]
 #![allow(clippy::cloned_ref_to_slice_refs)]
-
+#[macro_use]
+#[allow(unused_macros)]
+mod generated_contracts;
 #[cfg(feature = "tokio-runtime")]
 pub mod async_prefetch;
 pub mod backend;
@@ -67,6 +68,8 @@ pub mod cli;
 pub mod dataloader;
 pub mod dataset;
 pub mod datasets;
+#[cfg(feature = "doctest")]
+pub mod doctest;
 pub mod drift;
 pub mod error;
 pub mod federated;
@@ -79,22 +82,18 @@ pub mod mmap;
 pub mod parallel;
 pub mod quality;
 pub mod registry;
+#[cfg(feature = "repl")]
+pub mod repl;
 pub mod serve;
 pub mod sketch;
 pub mod split;
 pub mod streaming;
 pub mod tensor;
 pub mod transform;
-#[cfg(feature = "shuffle")]
-pub mod weighted;
-
-#[cfg(feature = "doctest")]
-pub mod doctest;
-#[cfg(feature = "repl")]
-pub mod repl;
 /// TUI dataset viewer module
 pub mod tui;
-
+#[cfg(feature = "shuffle")]
+pub mod weighted;
 // Re-exports for convenience
 // Re-export arrow types commonly needed
 pub use arrow::{

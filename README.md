@@ -211,10 +211,13 @@ Key design choices:
 
 This project follows extreme TDD practices:
 
+- **1,820+ tests** passing
 - 85%+ test coverage
 - 85%+ mutation score target
 - Zero `unwrap()`/`expect()` in library code
-- Comprehensive clippy lints
+- Comprehensive clippy lints (0 warnings)
+- Stratified split supports string labels (Utf8/LargeUtf8)
+- Weighted sampling handles empty datasets gracefully
 
 ## Citation
 

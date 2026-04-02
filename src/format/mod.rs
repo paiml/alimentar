@@ -259,6 +259,8 @@ impl Header {
     /// Create a new header with default values
     #[must_use]
     pub fn new(dataset_type: DatasetType) -> Self {
+        // Contract: configuration-v1.yaml precondition (pv codegen)
+        contract_pre_configuration!();
         Self {
             version: (FORMAT_VERSION_MAJOR, FORMAT_VERSION_MINOR),
             dataset_type,
@@ -275,6 +277,8 @@ impl Header {
     /// Serialize header to 32 bytes
     #[must_use]
     pub fn to_bytes(&self) -> [u8; HEADER_SIZE] {
+        // Contract: serialization-v1.yaml precondition (pv codegen)
+        contract_pre_configuration!();
         let mut buf = [0u8; HEADER_SIZE];
 
         // Magic (0-3)
@@ -335,6 +339,9 @@ impl Header {
                 &buf[0..4]
             )));
         }
+
+        // Contract: serialization-v1.yaml precondition (pv codegen)
+        contract_pre_configuration!(buf);
 
         // Version
         let version = (buf[4], buf[5]);

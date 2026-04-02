@@ -223,6 +223,8 @@ impl ContentPlugin for DatasetPlugin {
     }
 
     fn parse(&self, data: &[u8]) -> Result<BoxedContent> {
+        // Contract: configuration-v1.yaml precondition (pv codegen)
+        contract_pre_configuration!(data);
         // Try to parse as parquet first
         if data.len() >= 4 && &data[0..4] == b"PAR1" {
             let dataset = ArrowDataset::from_parquet_bytes(data)?;
