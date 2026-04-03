@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Contract-First Design
+
+This project follows contract-first development with provable-contracts.
+Contracts live in `../provable-contracts/contracts/alimentar/`.
+Run `pmat comply check` to validate contract compliance.
+
 ## Project Overview
 
 alimentar ("to feed" in Spanish) is a pure Rust data loading, transformation, and distribution library for the paiml sovereign AI stack. It provides HuggingFace-compatible functionality with sovereignty-first design (local storage default, no mandatory cloud dependency).
